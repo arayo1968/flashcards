@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Flashcards – iPhone向け 単一HTML</title>
+<link rel="manifest" href="data:application/manifest+json,{&quot;name&quot;:&quot;Flashcards&quot;,&quot;short_name&quot;:&quot;Cards&quot;, &quot;display&quot;:&quot;standalone&quot;, &quot;background_color&quot;:&quot;#0f172a&quot;, &quot;theme_color&quot;:&quot;#0f172a&quot;, &quot;icons&quot;:[]}" />
+<style>
+  :root{
+    --bg:#0f172a; /* slate-900 */
+    --fg:#e5e7eb; /* gray-200 */
+    --muted:#94a3b8; /* slate-400 */
+    --acc:#22d3ee; /* cyan-400 */
+    --card:#111827; /* gray-900 */
+    --ok:#10b981; --warn:#f59e0b; --bad:#ef4444;
+  }
+  html,body{height:100%;}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans JP", sans-serif;}
+  .wrap{max-width:900px;margin:0 auto;padding:16px;}
+  header{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+  header h1{font-size:20px;margin:0;font-weight:700;letter-spacing:.2px}
+  .controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .controls > *{background:#1f2937;color:var(--fg);border:1px solid #334155;border-radius:10px;padding:8px 10px;font-size:14px}
+  .controls label{display:flex;gap:6px;align-items:center}
+  .controls input[type="file"]{padding:6px;background:#0b1220}
+  .btn{cursor:pointer;}
+  .btn.primary{background:#0ea5e9;border-color:#0284c7}
+  .btn.ghost{background:#0b1220}
+  .grid{display:grid;grid-template-columns:1fr;gap:14px;margin-top:14px}
+  @media (min-width:720px){.grid{grid-template-columns:1fr auto}}
+  .card{user-select:none; background:linear-gradient(180deg,#0b1220,#0b0f19); border:1px solid #243044; border-radius:18px; padding:24px; min-height:42vh; display:flex; align-items:center; justify-content:center; text-align:center; font-size:28px; letter-spacing:.2px; box-shadow:0 8px 24px rgba(0,0,0,.25)}
+  .side{font-size:13px;color:var(--muted);position:absolute;top:10px;right:16px}
+  .big{font-size: clamp(22px, 4.4vw, 36px)}
+  .small{font-size: clamp(16px, 3.2vw, 24px)}
+  .panel{display:flex;flex-direction:column;gap:8px}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .progress{height:10px;background:#0b1220;border:1px solid #243044;border-radius:999px;overflow:hidden}
+  .bar{height:100%;width:0;background:linear-gradient(90deg,#22d3ee,#10b981)}
+  .kbd{border:1px solid #475569;border-radius:8px;padding:2px 6px;font-size:12px;color:#cbd5e1;background:#0b1220}
+  .hint{font-size:12px;color:var(--muted)}
+  .stat{font-size:13px;color:#cbd5e1}
+  .pill{font-size:12px;border:1px solid #475569;border-radius:999px;padding:4px 8px;}
+  .hidden{display:none}
+  a { color: #7dd3fc; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Flashcards – 単一HTML（iPhone向け）</h1>
+    <div class="controls">
+      <input id="file" type="file" accept=".csv,.tsv,.txt,.json" />
+      <button class="btn" id="btnSample">サンプル読込</button>
+      <button class="btn" id="btnExport">進捗エクスポート</button>
+      <button class="btn" id="btnImport">進捗インポート</button>
+      <button class="btn ghost" id="btnInstall" title="ホーム画面に追加のガイド">ホーム追加ガイド</button>
+    </div>
+  </header>
+
+  <div class="grid">
+    <div>
+      <div class="card" id="card">
+        <div class="side" id="side">Front</div>
+        <div id="content" class="big">カードを読み込んでください（CSV/TSV：front, back, audioUrl 可）</div>
+      </div>
+
+      <div class="row" style="margin-top:10px">
+        <button class="btn" id="prev">◀︎ 前 (<span class="kbd">←</span>)</button>
+        <button class="btn primary" id="flip">表/裏 (<span class="kbd">Space</span>)</button>
+        <button class="btn" id="next">次 ▶︎ (<span class="kbd">→</span>)</button>
+        <span class="pill" id="counter">0 / 0</span>
+        <span class="pill" id="status">—</span>
+      </div>
+
+      <div class="progress" aria-label="progress">
+        <div class="bar" id="bar"></div>
+      </div>
+
+      <div class="row">
+        <label><input type="checkbox" id="chkShuffle"> シャッフル</label>
+        <label><input type="checkbox" id="chkLoop"> 末尾でループ</label>
+        <label><input type="checkbox" id="chkAutoflip"> 自動で裏→次へ</label>
+        <label><input type="checkbox" id="chkAutoplay"> 音声を自動再生</label>
+        <label><input type="checkbox" id="chkTTS"> TTS（音声URLがないとき）</label>
+        <label>表示秒数<input type="number" id="secFront" min="0.3" step="0.1" value="1.0" style="width:70px"> / <input type="number" id="secBack" min="0.3" step="0.1" value="1.0" style="width:70px"> 秒</label>
+        <label>音声言語<select id="voiceLang">
+          <option value="en-US">en-US</option>
+          <option value="en-GB">en-GB</option>
+          <option value="ja-JP">ja-JP</option>
+        </select></label>
+        <label>話速<input type="number" id="voiceRate" min="0.5" max="2" step="0.1" value="1.0" style="width:70px"></label>
+      </div>
+
+      <div class="hint">CSV/TSV 形式：<code>front,back,audioUrl(任意)</code>。3000枚規模でもOK。キーボード：<span class="kbd">←</span>/<span class="kbd">→</span> で移動、<span class="kbd">Space</span> で表裏。タッチ左右スワイプでも操作できます。</div>
+    </div>
+
+    <aside class="panel">
+      <div class="row"><input id="search" placeholder="検索（部分一致）" class="controls" style="flex:1"></div>
+      <div class="row">
+        <button class="btn" id="btnFilter">検索ヒットのみで学習</button>
+        <button class="btn" id="btnClearFilter">フィルタ解除</button>
+      </div>
+      <div class="row">
+        <button class="btn" id="btnReset">最初から</button>
+        <button class="btn" id="btnMarkHard">苦手に追加</button>
+        <button class="btn" id="btnOnlyHard">苦手のみ</button>
+        <button class="btn" id="btnClearHard">苦手クリア</button>
+      </div>
+      <div class="stat" id="stat">—</div>
+      <details>
+        <summary>使い方</summary>
+        <ol>
+          <li>CSV/TSV ファイルを読み込む（列：front, back, audioUrl 任意）</li>
+          <li>必要なら「シャッフル」「自動で裏→次」「音声を自動再生」「TTS」をON</li>
+          <li>スペースで表裏。→で次、←で前。スワイプでも操作可能。</li>
+          <li>進捗や設定は自動保存（同ブラウザ内）。</li>
+          <li>ホーム画面に追加して全画面で使うと、アプリ風に動きます。</li>
+        </ol>
+      </details>
+    </aside>
+  </div>
+</div>
+
+<audio id="player" preload="none"></audio>
+
+<script>
+(function(){
+  const $ = (s)=>document.querySelector(s);
+  const cardEl = $('#card');
+  const contentEl = $('#content');
+  const sideEl = $('#side');
+  const barEl = $('#bar');
+  const counterEl = $('#counter');
+  const statusEl = $('#status');
+  const statEl = $('#stat');
+  const player = $('#player');
+
+  let deck = [];           // 原本
+  let view = [];           // 表示対象（フィルタ・苦手など反映）
+  let index = 0;           // 現在のインデックス（view基準）
+  let isFront = true;      // 表裏
+  let hardSet = new Set(); // 苦手インデックス（原本deck基準のid）
+  let autoTimer = null;
+  let touchStartX = null;
+
+  const LSKEY = 'fc_settings_v2';
+
+  function saveState(){
+    const st = {
+      index, isFront,
+      settings: getSettings(),
+      hard: Array.from(hardSet),
+      viewIndices: view.map(x=>x._id).slice(0,500), // 軽量化（直近500件）
+      deckCount: deck.length,
+    };
+    localStorage.setItem(LSKEY, JSON.stringify(st));
+  }
+  function loadState(){
+    try{
+      const st = JSON.parse(localStorage.getItem(LSKEY)||'{}');
+      if(st && st.settings){
+        applySettings(st.settings);
+      }
+      if(st && Array.isArray(st.hard)){
+        hardSet = new Set(st.hard);
+      }
+    }catch(e){}
+  }
+
+  function getSettings(){
+    return {
+      shuffle: $('#chkShuffle').checked,
+      loop: $('#chkLoop').checked,
+      autoflip: $('#chkAutoflip').checked,
+      autoplay: $('#chkAutoplay').checked,
+      tts: $('#chkTTS').checked,
+      secFront: parseFloat($('#secFront').value)||1,
+      secBack: parseFloat($('#secBack').value)||1,
+      voiceLang: $('#voiceLang').value,
+      voiceRate: parseFloat($('#voiceRate').value)||1,
+      search: $('#search').value
+    };
+  }
+  function applySettings(s){
+    $('#chkShuffle').checked = !!s.shuffle;
+    $('#chkLoop').checked = !!s.loop;
+    $('#chkAutoflip').checked = !!s.autoflip;
+    $('#chkAutoplay').checked = !!s.autoplay;
+    $('#chkTTS').checked = !!s.tts;
+    if(s.secFront) $('#secFront').value = s.secFront;
+    if(s.secBack) $('#secBack').value = s.secBack;
+    if(s.voiceLang) $('#voiceLang').value = s.voiceLang;
+    if(s.voiceRate) $('#voiceRate').value = s.voiceRate;
+    if(s.search) $('#search').value = s.search;
+  }
+
+  function parseText(txt){
+    // 自動判定：TSV優先、次いでCSV。単純パーサ（ダブルクォート対応）
+    const looksTSV = txt.split('\n',2).some(l=>/\t/.test(l));
+    const rows = [];
+    const sep = looksTSV ? '\t' : ',';
+    const re = new RegExp(
+      `\n|([^\"${sep}]+)|\"([^\"]*(?:\"\"[^\"]*)*)\"|(${sep})`, 'g'
+    );
+    let line = [];
+    let m, i=0;
+    while((m = re.exec(txt))){
+      if(m[0] === '\n') { rows.push(line); line = []; i=0; continue; }
+      if(m[3]) { // separator
+        i++; continue;
+      }
+      const val = (m[2]||m[1]||'').replace(/\"\"/g,'"');
+      line[i] = (line[i]||'') + val;
+    }
+    if(line.length) rows.push(line);
+    // map to {front, back, audio}
+    const out = [];
+    for(const r of rows){
+      if(!r || r.length===0) continue;
+      const front = (r[0]||'').trim();
+      const back  = (r[1]||'').trim();
+      const audio = (r[2]||'').trim();
+      if(front || back){ out.push({front, back, audio}); }
+    }
+    return out;
+  }
+
+  function loadDeckFromText(txt){
+    const arr = parseText(txt);
+    deck = arr.map((x,idx)=>({ ...x, _id: idx }));
+    buildView();
+    index = 0; isFront = true;
+    draw();
+    toast(`${deck.length} 枚を読み込みました`);
+    saveState();
+  }
+
+  function buildView(){
+    const s = getSettings();
+    view = deck.slice();
+    if($('#btnOnlyHard').dataset.active==='1'){
+      view = view.filter(x=>hardSet.has(x._id));
+    }
+    if($('#btnFilter').dataset.active==='1' && s.search){
+      const q = s.search.toLowerCase();
+      view = view.filter(x=> (x.front+"\n"+x.back).toLowerCase().includes(q));
+    }
+    if(s.shuffle){
+      for(let i=view.length-1;i>0;i--){
+        const j = Math.floor(Math.random()*(i+1));
+        [view[i],view[j]] = [view[j],view[i]];
+      }
+    }
+    updateStat();
+  }
+
+  function updateStat(){
+    statEl.textContent = `全${deck.length} / 表示${view.length} / 苦手${hardSet.size}`;
+  }
+
+  function draw(){
+    if(view.length===0){
+      contentEl.textContent = '表示対象のカードがありません（フィルタ/苦手のみ等を解除してください）';
+      sideEl.textContent = '';
+      counterEl.textContent = '0 / 0';
+      barEl.style.width = '0%';
+      return;
+    }
+    if(index<0) index=0;
+    if(index>=view.length) index=view.length-1;
+    const c = view[index];
+    contentEl.textContent = (isFront ? c.front : c.back) || '(空)';
+    contentEl.className = (isFront? 'big':'small');
+    sideEl.textContent = isFront ? 'Front' : 'Back';
+    counterEl.textContent = `${index+1} / ${view.length}`;
+    barEl.style.width = `${((index+1)/view.length)*100}%`;
+    statusEl.textContent = isFront ? '表' : '裏';
+  }
+
+  function flip(){
+    if(view.length===0) return;
+    isFront = !isFront; draw();
+    const s = getSettings();
+    if(!isFront){
+      // 裏にめくった瞬間：音声再生
+      maybePlayAudio();
+      if(s.autoflip){
+        clearTimeout(autoTimer);
+        autoTimer = setTimeout(()=>{ next(); }, Math.max(200, s.secBack*1000));
+      }
+    }
+    saveState();
+  }
+
+  function next(){
+    if(view.length===0) return;
+    const s = getSettings();
+    if(isFront){ // 表のままなら一度裏を見せる（自動）
+      isFront=false; draw(); maybePlayAudio();
+      if(s.autoflip){
+        clearTimeout(autoTimer);
+        autoTimer = setTimeout(()=>{ next(); }, Math.max(200, s.secBack*1000));
+      }
+      saveState();
+      return;
+    }
+    // 裏→次のカード
+    isFront=true;
+    if(index<view.length-1){
+      index++;
+    }else if(getSettings().loop){
+      index=0;
+    }
+    draw();
+    if(s.autoflip){
+      clearTimeout(autoTimer);
+      autoTimer = setTimeout(()=>{ flip(); }, Math.max(200, s.secFront*1000));
+    }
+    saveState();
+  }
+
+  function prev(){
+    if(view.length===0) return;
+    isFront=true;
+    if(index>0) index--; draw(); saveState();
+  }
+
+  function maybePlayAudio(){
+    const s = getSettings();
+    const c = view[index];
+    if(!c) return;
+    if(s.autoplay){
+      if(c.audio){
+        try{
+          player.src = c.audio; player.currentTime = 0; player.play().catch(()=>{});
+        }catch(e){}
+      }else if(s.tts){
+        speakTTS(c.front || c.back || '');
+      }
+    }
+  }
+
+  function speakTTS(text){
+    if(!('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+    const s = new SpeechSynthesisUtterance(text);
+    s.lang = $('#voiceLang').value;
+    s.rate = parseFloat($('#voiceRate').value)||1;
+    window.speechSynthesis.speak(s);
+  }
+
+  // events
+  $('#file').addEventListener('change', async (e)=>{
+    const f = e.target.files[0];
+    if(!f) return;
+    const txt = await f.text();
+    loadDeckFromText(txt);
+  });
+  $('#btnSample').addEventListener('click', ()=>{
+    const sample = `hello\tこんにちは\nworld\t世界\nability\t能力\naccount\t口座;説明\nacquire\t獲得する\nassess\t評価する\nrevenue\t収益\nreliable\t信頼できる\npronation\t前腕回内\nexternal rotation\t外旋\nserve\tサーブ\n`;
+    loadDeckFromText(sample);
+  });
+  $('#btnReset').addEventListener('click', ()=>{ index=0; isFront=true; draw(); saveState(); });
+  $('#btnMarkHard').addEventListener('click', ()=>{ const c=view[index]; if(c){ hardSet.add(c._id); updateStat(); saveState(); toast('苦手に追加'); }});
+  $('#btnOnlyHard').addEventListener('click', (ev)=>{ ev.target.dataset.active = ev.target.dataset.active==='1'?'0':'1'; buildView(); index=0; isFront=true; draw(); saveState(); });
+  $('#btnClearHard').addEventListener('click', ()=>{ hardSet.clear(); updateStat(); saveState(); toast('苦手をクリア'); });
+
+  $('#btnFilter').addEventListener('click', (ev)=>{ ev.target.dataset.active = ev.target.dataset.active==='1'?'0':'1'; buildView(); index=0; isFront=true; draw(); saveState(); });
+  $('#btnClearFilter').addEventListener('click', ()=>{ $('#search').value=''; $('#btnFilter').dataset.active='0'; buildView(); index=0; isFront=true; draw(); saveState(); });
+  $('#search').addEventListener('input', ()=>{ /* その場ではフィルタ適用しない。btnで適用 */ });
+
+  $('#prev').addEventListener('click', prev);
+  $('#flip').addEventListener('click', flip);
+  $('#next').addEventListener('click', next);
+
+  ['chkShuffle','chkLoop','chkAutoflip','chkAutoplay','chkTTS','secFront','secBack','voiceLang','voiceRate']
+    .forEach(id=> $('#'+id).addEventListener('change', ()=>{ buildView(); draw(); saveState(); }));
+
+  // keyboard
+  window.addEventListener('keydown', (e)=>{
+    if(e.target && ['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
+    if(e.code==='ArrowRight') { e.preventDefault(); next(); }
+    if(e.code==='ArrowLeft') { e.preventDefault(); prev(); }
+    if(e.code==='Space') { e.preventDefault(); flip(); }
+  });
+
+  // swipe
+  cardEl.addEventListener('touchstart', (e)=>{ touchStartX = e.changedTouches[0].clientX; }, {passive:true});
+  cardEl.addEventListener('touchend', (e)=>{
+    if(touchStartX==null) return; const dx = e.changedTouches[0].clientX - touchStartX; touchStartX=null;
+    if(Math.abs(dx)>50){ if(dx<0) next(); else prev(); }
+  }, {passive:true});
+
+  // export/import progress (simple JSON)
+  $('#btnExport').addEventListener('click', ()=>{
+    const blob = new Blob([localStorage.getItem(LSKEY)||'{}'], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download='flashcards_progress.json'; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url), 5000);
+  });
+  $('#btnImport').addEventListener('click', ()=>{
+    const inp = document.createElement('input'); inp.type='file'; inp.accept='.json';
+    inp.onchange = async ()=>{ const f = inp.files[0]; if(!f) return; const js = await f.text(); localStorage.setItem(LSKEY, js); loadState(); buildView(); draw(); toast('進捗を読み込みました'); };
+    inp.click();
+  });
+
+  // Install guide
+  $('#btnInstall').addEventListener('click', ()=>{
+    alert('【ホーム画面に追加（iPhone Safari）】\n1) 右下シェア → 2) 下にスクロールして「ホーム画面に追加」→ 3) 名前を決めて追加\n※ このページをiCloud Drive/ファイルAppに保存→Safariで開いて追加も可');
+  });
+
+  function toast(msg){
+    statusEl.textContent = msg; setTimeout(()=>{ statusEl.textContent = isFront?'表':'裏'; }, 1600);
+  }
+
+  // init
+  loadState();
+  draw();
+})();
+</script>
+</body>
+</html>
