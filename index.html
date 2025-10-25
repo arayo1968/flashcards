@@ -195,33 +195,35 @@
   }
 
   function parseText(txt){
-    // 自動判定：TSV優先、次いでCSV。単純パーサ（ダブルクォート対応）
-    const looksTSV = txt.split('\n',2).some(l=>/\t/.test(l));
-    const rows = [];
-    const sep = looksTSV ? '\t' : ',';
-    const re = new RegExp(
-      `\n|([^\"${sep}]+)|\"([^\"]*(?:\"\"[^\"]*)*)\"|(${sep})`, 'g'
-    );
-    let line = [];
-    let m, i=0;
-    while((m = re.exec(txt))){
-      if(m[0] === '\n') { rows.push(line); line = []; i=0; continue; }
-      if(m[3]) { // separator
-        i++; continue;
-      }
-      const val = (m[2]||m[1]||'').replace(/\"\"/g,'"');
-      line[i] = (line[i]||'') + val;
-    }
-    if(line.length) rows.push(line);
-    // map to {front, back, audio}
+    // 1. 行ごとに分ける（\r\n も \r も \n も全部OKにする）
+    const lines = txt.split(/\r?\n/).filter(line => line.trim() !== "");
+
+    // 2. 区切り文字の推定（最初の行にタブがあればTSV、それ以外はCSV）
+    const looksTSV = lines[0].includes("\t");
+    const sep = looksTSV ? "\t" : ",";
+
     const out = [];
-    for(const r of rows){
-      if(!r || r.length===0) continue;
-      const front = (r[0]||'').trim();
-      const back  = (r[1]||'').trim();
-      const audio = (r[2]||'').trim();
-      if(front || back){ out.push({front, back, audio}); }
+
+    for (let line of lines) {
+      // 3. 行をセパレータで割る
+      const cols = line.split(sep);
+
+      // 4. 3列想定：front, back, audioUrl
+      const front = (cols[0] || "").trim();
+      const back  = (cols[1] || "").trim();
+      const audio = (cols[2] || "").trim();
+
+      // 5. 先頭行が "front,back,audioUrl" みたいなヘッダーならスキップ
+      const isHeader =
+        front.toLowerCase() === "front" &&
+        back.toLowerCase() === "back";
+      if (isHeader) continue;
+
+      if (front || back) {
+        out.push({ front, back, audio });
+      }
     }
+
     return out;
   }
 
