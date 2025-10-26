@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Flashcards – iPhone向け 卑怯なくらい速い単語帳</title>
+<title>Flashcards – iPhone向け 超高速単語帳</title>
 
 <style>
   :root{
-    --bg:#0f172a; /* slate-900 */
-    --fg:#e5e7eb; /* gray-200 */
-    --muted:#94a3b8; /* slate-400 */
-    --acc:#22d3ee; /* cyan-400 */
-    --card:#111827; /* gray-900 */
+    --bg:#0f172a;
+    --fg:#e5e7eb;
+    --muted:#94a3b8;
+    --acc:#22d3ee;
+    --card:#111827;
     --ok:#10b981;
     --warn:#f59e0b;
     --bad:#ef4444;
@@ -58,7 +58,7 @@
     letter-spacing:.2px;
     box-shadow:0 8px 24px rgba(0,0,0,.25);
     position:relative;
-    white-space:pre-wrap; /* ← 改行(\n)を画面に反映する */
+    white-space:pre-wrap; /* 改行(\n)を反映 */
     word-break:break-word;
   }
 
@@ -118,7 +118,7 @@
       <button class="btn" id="btnSample">サンプル読込</button>
       <button class="btn" id="btnExport">進捗エクスポート</button>
       <button class="btn" id="btnImport">進捗インポート</button>
-      <button class="btn ghost" id="btnInstall" title="ホーム画面に追加のガイド">ホーム追加ガイド</button>
+      <button class="btn ghost" id="btnInstall">ホーム追加ガイド</button>
     </div>
   </header>
 
@@ -126,7 +126,11 @@
     <div>
       <div class="card" id="card">
         <div class="side" id="side">Front</div>
-        <div id="content" class="big">カードを読み込んでください（CSV/TSV：front, back, audioUrl）\n改行は \\n と書けば表示されます</div>
+        <div id="content" class="big">
+カードを読み込んでください
+CSV/TSV列: front, back, frontAudio, backAudio
+改行したい場所は \\n と書くとここで改行されます
+        </div>
       </div>
 
       <div class="row" style="margin-top:10px">
@@ -146,7 +150,7 @@
         <label><input type="checkbox" id="chkLoop"> 末尾でループ</label>
         <label><input type="checkbox" id="chkAutoflip"> 自動で裏→次へ</label>
         <label><input type="checkbox" id="chkAutoplay"> 音声を自動再生</label>
-        <label><input type="checkbox" id="chkTTS"> TTS（音声URLがないとき）</label>
+        <label><input type="checkbox" id="chkTTS"> TTS（音声URLが空のとき）</label>
 
         <label>表示秒数
           <input type="number" id="secFront" min="0.3" step="0.1" value="1.0" style="width:70px"> /
@@ -171,11 +175,13 @@
       </div>
 
       <div class="hint">
-        CSV/TSV 形式：<code>front,back,audioUrl</code>。<br>
-        3000枚規模でもOK。<br>
-        frontやbackの中に <code>\\n</code> と書くと改行として表示されます。<br>
-        キーボード：<span class="kbd">←</span>/<span class="kbd">→</span> で移動、
-        <span class="kbd">Space</span> で表裏。タッチ左右スワイプでも操作できます。
+        使い方:<br>
+        ・front / back はカードの表と裏の文字。\\n で改行OK。<br>
+        ・frontAudio は表を表示した瞬間に再生する音声URL。空なら無音。<br>
+        ・backAudio は裏を表示した瞬間に再生する音声URL。空なら無音。<br>
+        ・音声URLが空でTTS ONなら、その面のテキストを読み上げ。<br>
+        ・スペース=表/裏、→=次、←=前、スワイプ左右でもOK。<br>
+        ・進捗/苦手はブラウザ内に保存。ホーム画面追加でアプリ風に使えます。
       </div>
     </div>
 
@@ -193,14 +199,13 @@
       </div>
       <div class="stat" id="stat">—</div>
       <details>
-        <summary>使い方</summary>
+        <summary>メモ</summary>
         <ol>
-          <li>CSV/TSV ファイルを読み込む（列：front, back, audioUrl 任意）</li>
-          <li>「音声を自動再生」ONなら、表/裏を表示した瞬間に3列目URLの音声を再生</li>
-          <li>3列目が空白ならその面では再生しない。TTSをONなら合成音声を読む</li>
-          <li>スペースで表裏。→で次、←で前。スワイプでも操作可能。</li>
-          <li>進捗や設定は自動保存（同ブラウザ内）。</li>
-          <li>「ホーム画面に追加」でアプリ化できます。</li>
+          <li>CSVは4列: front, back, frontAudio, backAudio</li>
+          <li>frontAudioが空なら表を出しても音は鳴らない</li>
+          <li>backAudioが空なら裏を出しても音は鳴らない</li>
+          <li>空＋TTS ONならその面の文字を読み上げ</li>
+          <li>オートフリップONで、表→(音)→裏→(音)→次…が自動で進む</li>
         </ol>
       </details>
     </aside>
@@ -221,15 +226,15 @@
   const statEl = $('#stat');
   const player = $('#player');
 
-  let deck = [];           // 元データ
-  let view = [];           // 表示用データ（フィルタや苦手反映）
-  let index = 0;           // 現在位置 (view基準)
+  let deck = [];           // 全カード
+  let view = [];           // 絞り込み後
+  let index = 0;           // 現在のカード番号 (view基準)
   let isFront = true;      // true=表 / false=裏
   let hardSet = new Set(); // 苦手カード (deck._id)
   let autoTimer = null;
   let touchStartX = null;
 
-  const LSKEY = 'fc_settings_v3';
+  const LSKEY = 'fc_settings_v4';
 
   function saveState(){
     const st = {
@@ -281,17 +286,16 @@
     if(s.search) $('#search').value = s.search;
   }
 
-  // 改行サポート:
-  // CSVの中に「\\n」と書いておくと、画面表示時に本物の改行(\n)に変換
+  // "\\n" を実際の改行に変換
   function normalizeMultiline(str){
     return (str || "").replace(/\\n/g, "\n");
   }
 
+  // CSV/TSV -> deck
+  // 列: front, back, frontAudio, backAudio
   function parseText(txt){
-    // 行ごと
     const lines = txt.split(/\r?\n/).filter(line => line.trim() !== "");
 
-    // 区切り推定
     const looksTSV = lines[0].includes("\t");
     const sep = looksTSV ? "\t" : ",";
 
@@ -300,23 +304,29 @@
     for (let line of lines) {
       const cols = line.split(sep);
 
-      // 列: front, back, audioUrl
-      const frontRaw = (cols[0] || "").trim();
-      const backRaw  = (cols[1] || "").trim();
-      const audioRaw = (cols[2] || "").trim();
+      const frontRaw      = (cols[0] || "").trim();
+      const backRaw       = (cols[1] || "").trim();
+      const frontAudioRaw = (cols[2] || "").trim();
+      const backAudioRaw  = (cols[3] || "").trim();
 
-      // ヘッダーっぽい行はスキップ
+      // ヘッダー除外
       const isHeader =
         frontRaw.toLowerCase() === "front" &&
         backRaw.toLowerCase()  === "back";
       if (isHeader) continue;
 
-      const front = normalizeMultiline(frontRaw);
-      const back  = normalizeMultiline(backRaw);
-      const audio = audioRaw; // URLはそのまま
+      const front      = normalizeMultiline(frontRaw);
+      const back       = normalizeMultiline(backRaw);
+      const frontAudio = frontAudioRaw;
+      const backAudio  = backAudioRaw;
 
       if (front || back) {
-        out.push({ front, back, audio });
+        out.push({
+          front,
+          back,
+          frontAudio,
+          backAudio
+        });
       }
     }
 
@@ -377,7 +387,6 @@
 
     const c = view[index];
 
-    // 面のテキスト
     if (isFront) {
       contentEl.textContent = c.front || '(空)';
       contentEl.className = 'big';
@@ -403,27 +412,48 @@
     window.speechSynthesis.speak(u);
   }
 
-  // 表示されている面に合わせて音を鳴らす
   function playForCurrentSide(){
     const s = getSettings();
-    if(!s.autoplay) return; // 自動再生OFFなら何もしない
+    if (!s.autoplay) return;
 
     const c = view[index];
-    if(!c) return;
+    if (!c) return;
 
-    // audio列（3列目）が空なら、TTS fallbackするかどうか決める
-    if (c.audio) {
-      try {
-        player.src = c.audio;
-        player.currentTime = 0;
-        player.play().catch(()=>{});
-      } catch(e){}
-    } else if (s.tts) {
-      // 面に応じたテキストを読む
-      const txt = isFront ? (c.front||"") : (c.back||"");
-      if (txt.trim() !== "") {
-        speakTTS(txt);
+    // 今どっちの面？
+    if (isFront) {
+      // 表側のとき
+      if (c.frontAudio) {
+        try {
+          player.src = c.frontAudio;
+          player.currentTime = 0;
+          player.play().catch(()=>{});
+        } catch(e){}
+      } else if (s.tts) {
+        // frontAudioが空 → TTS許可されてればfrontテキストを読む
+        const textToSpeak = c.front || "";
+        if (textToSpeak.trim() !== "") {
+          speakTTS(textToSpeak);
+        }
       }
+      // frontAudioが空でTTSもOFFなら、そのまま無音
+      return;
+    } else {
+      // 裏側のとき
+      if (c.backAudio) {
+        try {
+          player.src = c.backAudio;
+          player.currentTime = 0;
+          player.play().catch(()=>{});
+        } catch(e){}
+      } else if (s.tts) {
+        // backAudioが空 → TTS許可されてればbackテキストを読む
+        const textToSpeak = c.back || "";
+        if (textToSpeak.trim() !== "") {
+          speakTTS(textToSpeak);
+        }
+      }
+      // backAudioが空でTTSもOFFなら、完全に無音
+      return;
     }
   }
 
@@ -431,11 +461,11 @@
     if(view.length===0) return;
     isFront = !isFront;
     draw();
-    playForCurrentSide(); // ひっくり返した面に対応する音
+    playForCurrentSide(); // ひっくり返した面の音
 
     const s = getSettings();
     if(!isFront){
-      // 裏を見せた直後にオートフリップ予約
+      // 裏を見せた瞬間に自動送り予約
       if(s.autoflip){
         clearTimeout(autoTimer);
         autoTimer = setTimeout(()=>{ next(); }, Math.max(200, s.secBack*1000));
@@ -461,7 +491,7 @@
       return;
     }
 
-    // ここに来たら「裏を見終わったので次のカードへ」
+    // 裏を見終わった → 次のカードへ
     isFront=true;
     if(index<view.length-1){
       index++;
@@ -469,7 +499,7 @@
       index=0;
     }
     draw();
-    playForCurrentSide(); // 新しいカードの表の音
+    playForCurrentSide(); // 次カードの表の音
     if(s.autoflip){
       clearTimeout(autoTimer);
       autoTimer = setTimeout(()=>{ flip(); }, Math.max(200, s.secFront*1000));
@@ -488,19 +518,18 @@
     saveState();
   }
 
-  // Safariに「音を鳴らしていいよ」という許可を与えるボタン
+  // Safariに「音出していいよ」というタップを与える
   $('#unlockAudio').addEventListener('click', ()=>{
     const c = view[index];
     if(!c) return;
-    // audio があればそれを使って1回再生して権限を確立
-    if(c.audio){
+    const trialUrl = c.frontAudio || c.backAudio;
+    if(trialUrl){
       try {
-        player.src = c.audio;
+        player.src = trialUrl;
         player.currentTime = 0;
         player.play().catch(()=>{});
       } catch(e){}
     } else {
-      // audioが空でTTSオンならTTSを1回しゃべらせて権限を確立
       const s = getSettings();
       if(s.tts){
         const txt = isFront ? (c.front||"") : (c.back||"");
@@ -519,19 +548,13 @@
     loadDeckFromText(txt);
   });
 
-  // サンプルデータ読込
+  // サンプル
   $('#btnSample').addEventListener('click', ()=>{
     const sample = [
-      "front,back,audioUrl",
-      "ability,能力,https://ssl.gstatic.com/dictionary/static/sounds/20200429/ability--_us_1.mp3",
-      "achieve,達成する,https://ssl.gstatic.com/dictionary/static/sounds/20200429/achieve--_us_1.mp3",
-      "acquire,習得する,https://ssl.gstatic.com/dictionary/static/sounds/20200429/acquire--_us_1.mp3",
-      "adapt,適応する,https://ssl.gstatic.com/dictionary/static/sounds/20200429/adapt--_us_1.mp3",
-      "adjust,調整する,https://ssl.gstatic.com/dictionary/static/sounds/20200429/adjust--_us_1.mp3",
-      "analyze,分析する,https://ssl.gstatic.com/dictionary/static/sounds/20200429/analyze--_us_1.mp3",
-      "announce,発表する,https://ssl.gstatic.com/dictionary/static/sounds/20200429/announce--_us_1.mp3",
-      "apply,応用する／申し込む,https://ssl.gstatic.com/dictionary/static/sounds/20200429/apply--_us_1.mp3",
-      "arrange,手配する,https://ssl.gstatic.com/dictionary/static/sounds/20200429/arrange--_us_1.mp3"
+      "front,back,frontAudio,backAudio",
+      "ability,能力,https://ssl.gstatic.com/dictionary/static/sounds/20200429/ability--_us_1.mp3,",
+      "achieve,達成する,https://ssl.gstatic.com/dictionary/static/sounds/20200429/achieve--_us_1.mp3,",
+      "nice to meet you,はじめまして\\nよろしくお願いします,,https://ssl.gstatic.com/dictionary/static/sounds/20200429/you--_us_1.mp3"
     ].join("\n");
     loadDeckFromText(sample);
   });
@@ -592,7 +615,7 @@
     saveState();
   });
 
-  $('#search').addEventListener('input',()=>{ /* フィルタ確定はbtnFilter */ });
+  $('#search').addEventListener('input',()=>{ /* 実際の絞り込みはbtnFilter押下時 */ });
 
   $('#prev').addEventListener('click', prev);
   $('#flip').addEventListener('click', flip);
@@ -632,7 +655,7 @@
     }
   },{passive:true});
 
-  // export/import of local progress
+  // 進捗エクスポート
   $('#btnExport').addEventListener('click',()=>{
     const blob = new Blob([localStorage.getItem(LSKEY)||'{}'], {type:'application/json'});
     const url = URL.createObjectURL(blob);
@@ -643,6 +666,7 @@
     setTimeout(()=>URL.revokeObjectURL(url),5000);
   });
 
+  // 進捗インポート
   $('#btnImport').addEventListener('click',()=>{
     const inp = document.createElement('input');
     inp.type='file';
@@ -666,8 +690,10 @@
   $('#btnInstall').addEventListener('click',()=>{
     alert(
       '【ホーム画面に追加（iPhone Safari）】\n' +
-      '1) 共有ボタン → 2) 下にスクロールして「ホーム画面に追加」→ 3) 名前を決めて追加\n' +
-      'このページを公開URLでSafariから開いた状態でやってください。'
+      '1) 公開したURLをSafariで開く\n' +
+      '2) 共有ボタン\n' +
+      '3) 下にスクロールして「ホーム画面に追加」\n' +
+      'これでアプリのように使えます。'
     );
   });
 
