@@ -3,740 +3,262 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Flashcards – iPhone向け 超高速単語帳</title>
-
+<title>Simple Flashcards</title>
 <style>
-  :root{
-    --bg:#0f172a;
-    --fg:#e5e7eb;
-    --muted:#94a3b8;
-    --acc:#22d3ee;
-    --card:#111827;
-    --ok:#10b981;
-    --warn:#f59e0b;
-    --bad:#ef4444;
+  :root {
+    --bg: #0f172a;
+    --card-bg: #1e293b;
+    --text: #f1f5f9;
+    --accent: #38bdf8;
+    --border: #334155;
   }
-  html,body{height:100%;}
-  body{
-    margin:0;
-    background:var(--bg);
-    color:var(--fg);
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans JP",sans-serif;
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: sans-serif;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    align-items: center;
   }
-  .wrap{max-width:900px;margin:0 auto;padding:16px;}
-  header{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
-  header h1{font-size:20px;margin:0;font-weight:700;letter-spacing:.2px}
-  .controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-  .controls > *{
-    background:#1f2937;
-    color:var(--fg);
-    border:1px solid #334155;
-    border-radius:10px;
-    padding:8px 10px;
-    font-size:14px
+  .container {
+    width: 100%;
+    max-width: 600px;
+    padding: 20px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
   }
-  .controls label{display:flex;gap:6px;align-items:center}
-  .controls input[type="file"]{padding:6px;background:#0b1220}
-  .btn{cursor:pointer;}
-  .btn.primary{background:#0ea5e9;border-color:#0284c7}
-  .btn.ghost{background:#0b1220}
-  .grid{display:grid;grid-template-columns:1fr;gap:14px;margin-top:14px}
-  @media (min-width:720px){.grid{grid-template-columns:1fr auto}}
-
-  .card{
-    user-select:none;
-    background:linear-gradient(180deg,#0b1220,#0b0f19);
-    border:1px solid #243044;
-    border-radius:18px;
-    padding:24px;
-    min-height:42vh;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    text-align:center;
-    font-size:28px;
-    letter-spacing:.2px;
-    box-shadow:0 8px 24px rgba(0,0,0,.25);
-    position:relative;
-    white-space:pre-wrap;
-    word-break:break-word;
+  
+  /* ヘッダーエリア */
+  header {
+    margin-bottom: 20px;
+    text-align: center;
+  }
+  input[type="file"] {
+    display: none; /* ファイル選択ボタンを隠してカスタムボタンにする */
+  }
+  .btn-file {
+    background: #334155;
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    display: inline-block;
   }
 
-  .side{
-    font-size:13px;
-    color:var(--muted);
-    position:absolute;
-    top:10px;
-    right:16px
+  /* カードエリア */
+  .card-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    position: relative;
+    cursor: pointer; /* タップできることを示す */
   }
-  .big{font-size: clamp(22px, 4.4vw, 36px); white-space:pre-wrap;}
-  .small{font-size: clamp(16px, 3.2vw, 24px); white-space:pre-wrap;}
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 40px 20px;
+    min-height: 200px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-size: 24px;
+    font-weight: bold;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+    white-space: pre-wrap; /* 改行対応 */
+  }
+  .label {
+    position: absolute;
+    top: -10px;
+    left: 20px;
+    background: var(--accent);
+    color: #000;
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-weight: bold;
+  }
+  
+  /* 進捗表示 */
+  .status {
+    text-align: center;
+    margin-top: 10px;
+    color: #94a3b8;
+    font-size: 14px;
+  }
 
-  .panel{display:flex;flex-direction:column;gap:8px}
-  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  /* 操作ボタン */
+  .action-area {
+    margin-top: 20px;
+    height: 60px;
+  }
+  .btn-main {
+    width: 100%;
+    height: 100%;
+    background: var(--accent);
+    color: #0f172a;
+    border: none;
+    border-radius: 12px;
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  .btn-main:active {
+    opacity: 0.8;
+  }
 
-  .progress{
-    height:10px;
-    background:#0b1220;
-    border:1px solid #243044;
-    border-radius:999px;
-    overflow:hidden
-  }
-  .bar{
-    height:100%;
-    width:0;
-    background:linear-gradient(90deg,#22d3ee,#10b981)
-  }
-
-  .kbd{
-    border:1px solid #475569;
-    border-radius:8px;
-    padding:2px 6px;
-    font-size:12px;
-    color:#cbd5e1;
-    background:#0b1220
-  }
-  .hint{font-size:12px;color:var(--muted)}
-  .stat{font-size:13px;color:#cbd5e1}
-  .pill{
-    font-size:12px;
-    border:1px solid #475569;
-    border-radius:999px;
-    padding:4px 8px;
-  }
-  .hidden{display:none}
-  a { color: #7dd3fc; }
+  /* 完了時のメッセージ */
+  .finished { color: #4ade80; font-size: 20px; }
 </style>
 </head>
 <body>
-<div class="wrap">
+
+<div class="container">
   <header>
-    <h1>Flashcards – 単語帳</h1>
-    <div class="controls">
-      <input id="file" type="file" accept=".csv,.tsv,.txt,.json" />
-      <button class="btn" id="btnSample2col">サンプル(2列)読込</button>
-      <button class="btn" id="btnSample4col">サンプル(4列)読込</button>
-      <button class="btn" id="btnExport">進捗エクスポート</button>
-      <button class="btn" id="btnImport">進捗インポート</button>
-      <button class="btn ghost" id="btnInstall">ホーム追加ガイド</button>
+    <label class="btn-file">
+      📂 テキストファイルを選択
+      <input type="file" id="fileInput" accept=".txt,.csv,.tsv">
+    </label>
+    <div style="font-size:12px; color:#64748b; margin-top:5px;">
+      形式: 表,裏 (カンマまたはタブ区切り)
     </div>
   </header>
 
-  <div class="grid">
-    <div>
-      <div class="card" id="card">
-        <div class="side" id="side">Front</div>
-        <div id="content" class="big">
-カードを読み込んでください
-
-【対応フォーマット】
-(推奨) 2列: front, back
-(互換) 4列: front, back, frontAudio, backAudio
-
-改行したい場所は \n と書くとここで改行されます
-        </div>
-      </div>
-
-      <div class="row" style="margin-top:10px">
-        <button class="btn" id="prev">◀︎ 前 (<span class="kbd">←</span>)</button>
-        <button class="btn primary" id="flip">表/裏 (<span class="kbd">Space</span>)</button>
-        <button class="btn" id="next">次 ▶︎ (<span class="kbd">→</span>)</button>
-        <span class="pill" id="counter">0 / 0</span>
-        <span class="pill" id="status">—</span>
-      </div>
-
-      <div class="progress" aria-label="progress">
-        <div class="bar" id="bar"></div>
-      </div>
-
-      <div class="row">
-        <label><input type="checkbox" id="chkShuffle"> シャッフル</label>
-        <label><input type="checkbox" id="chkLoop"> 末尾でループ</label>
-        <label><input type="checkbox" id="chkAutoflip"> 自動で裏→次へ</label>
-        <label><input type="checkbox" id="chkAutoplay"> 音声を自動再生</label>
-
-        <!-- ★追加：面ごとのTTS -->
-        <label><input type="checkbox" id="chkTTSFront"> 表をTTS</label>
-        <label><input type="checkbox" id="chkTTSBack"> 裏をTTS</label>
-
-        <label>表示秒数
-          <input type="number" id="secFront" min="0.3" step="0.1" value="1.0" style="width:70px"> /
-          <input type="number" id="secBack"  min="0.3" step="0.1" value="1.0" style="width:70px"> 秒
-        </label>
-
-        <label>音声言語
-          <select id="voiceLang">
-            <option value="en-US">en-US</option>
-            <option value="en-GB">en-GB</option>
-            <option value="ja-JP">ja-JP</option>
-          </select>
-        </label>
-
-        <label>話速
-          <input type="number" id="voiceRate" min="0.5" max="2" step="0.1" value="1.0" style="width:70px">
-        </label>
-      </div>
-
-      <div class="row">
-        <button class="btn" id="unlockAudio">🔊 音を許可</button>
-      </div>
-
-      <div class="hint">
-        使い方:<br>
-        ・【2列】front / back のみ（推奨）。【4列】frontAudio/backAudio も互換対応。<br>
-        ・改行したい場所は <b>\n</b> と書くとカード表示で改行されます。<br>
-        ・<b>音声URLがある場合はURLを優先</b>して再生します。<br>
-        ・音声URLが空のとき、<b>表は「表をTTS」</b>、<b>裏は「裏をTTS」</b> がONなら、その面を読み上げます。<br>
-        ・スペース=表/裏、→=次、←=前、スワイプ左右でもOK。<br>
-        ・進捗/苦手はブラウザ内に保存。ホーム画面追加でアプリ風に使えます。
-      </div>
+  <div class="card-area" id="cardArea" onclick="step()">
+    <div class="card" id="cardText">
+      ファイルを選択してください
     </div>
+    <div class="label" id="sideLabel" style="display:none">FRONT</div>
+  </div>
 
-    <aside class="panel">
-      <div class="row"><input id="search" placeholder="検索（部分一致）" class="controls" style="flex:1"></div>
-      <div class="row">
-        <button class="btn" id="btnFilter">検索ヒットのみで学習</button>
-        <button class="btn" id="btnClearFilter">フィルタ解除</button>
-      </div>
-      <div class="row">
-        <button class="btn" id="btnReset">最初から</button>
-        <button class="btn" id="btnMarkHard">苦手に追加</button>
-        <button class="btn" id="btnOnlyHard">苦手のみ</button>
-        <button class="btn" id="btnClearHard">苦手クリア</button>
-      </div>
-      <div class="stat" id="stat">—</div>
-      <details>
-        <summary>メモ</summary>
-        <ol>
-          <li>推奨は2列: front, back（CSV/TSV/TXT どれでも可）</li>
-          <li>4列: front, back, frontAudio, backAudio も読める</li>
-          <li>URLが空なら、表は「表をTTS」ONのときのみ読み上げ</li>
-          <li>URLが空なら、裏は「裏をTTS」ONのときのみ読み上げ</li>
-          <li>オートフリップONで、表→(音)→裏→(音)→次…が自動で進む</li>
-        </ol>
-      </details>
-    </aside>
+  <div class="status" id="statusText">0 / 0</div>
+
+  <div class="action-area">
+    <button class="btn-main" id="btnAction" onclick="step()">次へ</button>
   </div>
 </div>
 
-<audio id="player" preload="none"></audio>
-
 <script>
-(function(){
-  const $ = (s)=>document.querySelector(s);
-  const cardEl = $('#card');
-  const contentEl = $('#content');
-  const sideEl = $('#side');
-  const barEl = $('#bar');
-  const counterEl = $('#counter');
-  const statusEl = $('#status');
-  const statEl = $('#stat');
-  const player = $('#player');
+  let deck = [];        // カードデータ配列
+  let currentIndex = 0; // 今何枚目か
+  let isFront = true;   // 今「表」を表示しているか
+  
+  const fileInput = document.getElementById('fileInput');
+  const cardText = document.getElementById('cardText');
+  const sideLabel = document.getElementById('sideLabel');
+  const statusText = document.getElementById('statusText');
+  const btnAction = document.getElementById('btnAction');
 
-  let deck = [];           // 全カード
-  let view = [];           // 絞り込み後
-  let index = 0;           // 現在のカード番号 (view基準)
-  let isFront = true;      // true=表 / false=裏
-  let hardSet = new Set(); // 苦手カード (deck._id)
-  let autoTimer = null;
-  let touchStartX = null;
+  // ファイル読み込み処理
+  fileInput.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
 
-  const LSKEY = 'fc_settings_v5'; // ★バージョン更新
+    const text = await file.text();
+    parseAndLoad(text);
+  });
 
-  function saveState(){
-    const st = {
-      index,
-      isFront,
-      settings: getSettings(),
-      hard: Array.from(hardSet),
-      viewIndices: view.map(x=>x._id).slice(0,500),
-      deckCount: deck.length,
-    };
-    localStorage.setItem(LSKEY, JSON.stringify(st));
-  }
-  function loadState(){
-    try{
-      const st = JSON.parse(localStorage.getItem(LSKEY)||'{}');
-      if(st && st.settings){
-        applySettings(st.settings);
+  // テキスト解析 & シャッフル
+  function parseAndLoad(text) {
+    // 改行で分割して行にする
+    const lines = text.split(/\r?\n/).filter(line => line.trim() !== "");
+    
+    // 区切り文字の推定（タブがあればタブ、なければカンマ）
+    const separator = lines[0] && lines[0].includes('\t') ? '\t' : ',';
+
+    deck = [];
+    lines.forEach(line => {
+      const parts = line.split(separator);
+      // 2列以上ある場合のみ採用
+      if (parts.length >= 2) {
+        deck.push({
+          front: parts[0].trim(),
+          back: parts[1].trim()
+        });
       }
-      if(st && Array.isArray(st.hard)){
-        hardSet = new Set(st.hard);
-      }
-    }catch(e){}
-  }
-
-  function getSettings(){
-    return {
-      shuffle:    $('#chkShuffle').checked,
-      loop:       $('#chkLoop').checked,
-      autoflip:   $('#chkAutoflip').checked,
-      autoplay:   $('#chkAutoplay').checked,
-      ttsFront:   $('#chkTTSFront').checked,
-      ttsBack:    $('#chkTTSBack').checked,
-      secFront:   parseFloat($('#secFront').value)||1,
-      secBack:    parseFloat($('#secBack').value)||1,
-      voiceLang:  $('#voiceLang').value,
-      voiceRate:  parseFloat($('#voiceRate').value)||1,
-      search:     $('#search').value
-    };
-  }
-  function applySettings(s){
-    $('#chkShuffle').checked   = !!s.shuffle;
-    $('#chkLoop').checked      = !!s.loop;
-    $('#chkAutoflip').checked  = !!s.autoflip;
-    $('#chkAutoplay').checked  = !!s.autoplay;
-    $('#chkTTSFront').checked  = !!s.ttsFront;
-    $('#chkTTSBack').checked   = !!s.ttsBack;
-    if(s.secFront) $('#secFront').value = s.secFront;
-    if(s.secBack)  $('#secBack').value  = s.secBack;
-    if(s.voiceLang) $('#voiceLang').value = s.voiceLang;
-    if(s.voiceRate) $('#voiceRate').value = s.voiceRate;
-    if(s.search) $('#search').value = s.search;
-  }
-
-  // "\n" を実際の改行に変換（ファイル内は \\n でもOK）
-  function normalizeMultiline(str){
-    return (str || "").replace(/\\n/g, "\n");
-  }
-
-  // 非常に簡易な「区切り推定」：TSV優先、なければCSV
-  function detectSeparator(lines){
-    if(!lines || !lines[0]) return ",";
-    return lines[0].includes("\t") ? "\t" : ",";
-  }
-
-  // 2列/4列対応パーサ
-  // 2列: front, back
-  // 4列: front, back, frontAudio, backAudio
-  function parseText(txt){
-    const lines = txt.split(/\r?\n/).filter(line => line.trim() !== "");
-    if(lines.length===0) return [];
-
-    const sep = detectSeparator(lines);
-    const out = [];
-
-    for (let line of lines) {
-      const cols = line.split(sep);
-
-      const frontRaw      = (cols[0] || "").trim();
-      const backRaw       = (cols[1] || "").trim();
-      const frontAudioRaw = (cols[2] || "").trim();
-      const backAudioRaw  = (cols[3] || "").trim();
-
-      // ヘッダー除外（2列/4列どちらでも）
-      const f0 = frontRaw.toLowerCase();
-      const b0 = backRaw.toLowerCase();
-      const isHeader =
-        (f0 === "front" && b0 === "back") ||
-        (f0 === "text" && (b0 === "back" || b0 === "meaning" || b0 === "translation"));
-
-      if (isHeader) continue;
-
-      const front      = normalizeMultiline(frontRaw);
-      const back       = normalizeMultiline(backRaw);
-      const frontAudio = frontAudioRaw;
-      const backAudio  = backAudioRaw;
-
-      if (front || back) {
-        out.push({ front, back, frontAudio, backAudio });
-      }
-    }
-
-    return out;
-  }
-
-  function loadDeckFromText(txt){
-    const arr = parseText(txt);
-    deck = arr.map((x,idx)=>({ ...x, _id: idx }));
-    buildView();
-    index = 0;
-    isFront = true;
-    draw();
-    toast(`${deck.length} 枚を読み込みました`);
-    saveState();
-  }
-
-  function buildView(){
-    const s = getSettings();
-    view = deck.slice();
-
-    // 苦手のみ
-    if($('#btnOnlyHard').dataset.active==='1'){
-      view = view.filter(x=>hardSet.has(x._id));
-    }
-    // 検索ヒットのみ
-    if($('#btnFilter').dataset.active==='1' && s.search){
-      const q = s.search.toLowerCase();
-      view = view.filter(x=> (x.front+"\n"+x.back).toLowerCase().includes(q));
-    }
-
-    // シャッフル
-    if(s.shuffle){
-      for(let i=view.length-1;i>0;i--){
-        const j = Math.floor(Math.random()*(i+1));
-        [view[i],view[j]] = [view[j],view[i]];
-      }
-    }
-
-    updateStat();
-  }
-
-  function updateStat(){
-    statEl.textContent = `全${deck.length} / 表示${view.length} / 苦手${hardSet.size}`;
-  }
-
-  function draw(){
-    if(view.length===0){
-      contentEl.textContent = '表示対象のカードがありません（フィルタ/苦手のみ等を解除してください）';
-      sideEl.textContent = '';
-      counterEl.textContent = '0 / 0';
-      barEl.style.width = '0%';
-      statusEl.textContent = '—';
-      return;
-    }
-    if(index<0) index=0;
-    if(index>=view.length) index=view.length-1;
-
-    const c = view[index];
-
-    if (isFront) {
-      contentEl.textContent = c.front || '(空)';
-      contentEl.className = 'big';
-      sideEl.textContent = 'Front';
-      statusEl.textContent = '表';
-    } else {
-      contentEl.textContent = c.back || '(空)';
-      contentEl.className = 'small';
-      sideEl.textContent = 'Back';
-      statusEl.textContent = '裏';
-    }
-
-    counterEl.textContent = `${index+1} / ${view.length}`;
-    barEl.style.width = `${((index+1)/view.length)*100}%`;
-  }
-
-  function speakTTS(text){
-    if(!('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = $('#voiceLang').value;
-    u.rate = parseFloat($('#voiceRate').value)||1;
-    window.speechSynthesis.speak(u);
-  }
-
-  function stopAudio(){
-    try{ player.pause(); }catch(e){}
-    try{ player.currentTime = 0; }catch(e){}
-    if('speechSynthesis' in window){
-      try{ window.speechSynthesis.cancel(); }catch(e){}
-    }
-  }
-
-  function playForCurrentSide(){
-    const s = getSettings();
-    if (!s.autoplay) return;
-
-    const c = view[index];
-    if (!c) return;
-
-    // 面が変わるたびに、前の音を止める（TTS重なり防止）
-    stopAudio();
-
-    if (isFront) {
-      // 表側
-      if (c.frontAudio) {
-        try {
-          player.src = c.frontAudio;
-          player.currentTime = 0;
-          player.play().catch(()=>{});
-        } catch(e){}
-      } else if (s.ttsFront) {
-        const textToSpeak = c.front || "";
-        if (textToSpeak.trim() !== "") speakTTS(textToSpeak);
-      }
-      return;
-    } else {
-      // 裏側
-      if (c.backAudio) {
-        try {
-          player.src = c.backAudio;
-          player.currentTime = 0;
-          player.play().catch(()=>{});
-        } catch(e){}
-      } else if (s.ttsBack) {
-        const textToSpeak = c.back || "";
-        if (textToSpeak.trim() !== "") speakTTS(textToSpeak);
-      }
-      return;
-    }
-  }
-
-  function flip(){
-    if(view.length===0) return;
-    isFront = !isFront;
-    draw();
-    playForCurrentSide();
-
-    const s = getSettings();
-    if(!isFront){
-      if(s.autoflip){
-        clearTimeout(autoTimer);
-        autoTimer = setTimeout(()=>{ next(); }, Math.max(200, s.secBack*1000));
-      }
-    }
-    saveState();
-  }
-
-  function next(){
-    if(view.length===0) return;
-    const s = getSettings();
-
-    if(isFront){
-      // まず裏へ
-      isFront=false;
-      draw();
-      playForCurrentSide();
-      if(s.autoflip){
-        clearTimeout(autoTimer);
-        autoTimer = setTimeout(()=>{ next(); }, Math.max(200, s.secBack*1000));
-      }
-      saveState();
-      return;
-    }
-
-    // 裏→次カードへ
-    isFront=true;
-    if(index<view.length-1){
-      index++;
-    }else if(getSettings().loop){
-      index=0;
-    }
-    draw();
-    playForCurrentSide();
-
-    if(s.autoflip){
-      clearTimeout(autoTimer);
-      autoTimer = setTimeout(()=>{ flip(); }, Math.max(200, s.secFront*1000));
-    }
-    saveState();
-  }
-
-  function prev(){
-    if(view.length===0) return;
-    isFront=true;
-    if(index>0) index--;
-    draw();
-    playForCurrentSide();
-    saveState();
-  }
-
-  // Safariに「音出していいよ」というタップを与える（URLが無ければTTS）
-  $('#unlockAudio').addEventListener('click', ()=>{
-    const c = view[index];
-    if(!c) return;
-
-    stopAudio();
-
-    const trialUrl = isFront ? (c.frontAudio||"") : (c.backAudio||"");
-    if(trialUrl){
-      try{
-        player.src = trialUrl;
-        player.currentTime = 0;
-        player.play().catch(()=>{});
-      }catch(e){}
-    }else{
-      const s = getSettings();
-      const canTTS = isFront ? s.ttsFront : s.ttsBack;
-      if(canTTS){
-        const txt = isFront ? (c.front||"") : (c.back||"");
-        if (txt.trim() !== "") speakTTS(txt);
-      }
-    }
-  });
-
-  // ファイル読込
-  $('#file').addEventListener('change', async (e)=>{
-    const f = e.target.files[0];
-    if(!f) return;
-    const txt = await f.text();
-    loadDeckFromText(txt);
-  });
-
-  // サンプル（2列）
-  $('#btnSample2col').addEventListener('click', ()=>{
-    const sample = [
-      "front,back",
-      "In the foreseeable future, hydrogen will play a key role.,将来、水素は重要な役割を果たす。",
-      "As a result of the delay, production was halted.,遅延の結果、生産は停止した。",
-      "The project was postponed because of the storm.,嵐のため計画は延期された。",
-      "Owing to the heavy rain, the event was cancelled.,大雨のためイベントは中止された。",
-      "As a consequence of the merger, staff numbers increased.,合併の結果、従業員数が増えた。"
-    ].join("\n");
-    loadDeckFromText(sample);
-  });
-
-  // サンプル（4列互換）
-  $('#btnSample4col').addEventListener('click', ()=>{
-    const sample = [
-      "front,back,frontAudio,backAudio",
-      "ability,能力,https://ssl.gstatic.com/dictionary/static/sounds/20200429/ability--_us_1.mp3,",
-      "achieve,達成する,https://ssl.gstatic.com/dictionary/static/sounds/20200429/achieve--_us_1.mp3,",
-      "nice to meet you,はじめまして\\nよろしくお願いします,,https://ssl.gstatic.com/dictionary/static/sounds/20200429/you--_us_1.mp3"
-    ].join("\n");
-    loadDeckFromText(sample);
-  });
-
-  $('#btnReset').addEventListener('click', ()=>{
-    index=0;
-    isFront=true;
-    draw();
-    playForCurrentSide();
-    saveState();
-  });
-
-  $('#btnMarkHard').addEventListener('click', ()=>{
-    const c=view[index];
-    if(c){
-      hardSet.add(c._id);
-      updateStat();
-      saveState();
-      toast('苦手に追加');
-    }
-  });
-
-  $('#btnOnlyHard').addEventListener('click',(ev)=>{
-    ev.target.dataset.active = ev.target.dataset.active==='1'?'0':'1';
-    buildView();
-    index=0;
-    isFront=true;
-    draw();
-    playForCurrentSide();
-    saveState();
-  });
-
-  $('#btnClearHard').addEventListener('click',()=>{
-    hardSet.clear();
-    updateStat();
-    saveState();
-    toast('苦手をクリア');
-  });
-
-  $('#btnFilter').addEventListener('click',(ev)=>{
-    ev.target.dataset.active = ev.target.dataset.active==='1'?'0':'1';
-    buildView();
-    index=0;
-    isFront=true;
-    draw();
-    playForCurrentSide();
-    saveState();
-  });
-
-  $('#btnClearFilter').addEventListener('click',()=>{
-    $('#search').value='';
-    $('#btnFilter').dataset.active='0';
-    buildView();
-    index=0;
-    isFront=true;
-    draw();
-    playForCurrentSide();
-    saveState();
-  });
-
-  $('#search').addEventListener('input',()=>{ /* 絞り込みはbtnFilter押下時 */ });
-
-  $('#prev').addEventListener('click', prev);
-  $('#flip').addEventListener('click', flip);
-  $('#next').addEventListener('click', next);
-
-  [
-    'chkShuffle','chkLoop','chkAutoflip','chkAutoplay',
-    'chkTTSFront','chkTTSBack',
-    'secFront','secBack','voiceLang','voiceRate'
-  ].forEach(id=>{
-    $('#'+id).addEventListener('change', ()=>{
-      buildView();
-      draw();
-      playForCurrentSide();
-      saveState();
     });
-  });
 
-  // keyboard
-  window.addEventListener('keydown',(e)=>{
-    if(e.target && ['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
-    if(e.code==='ArrowRight'){ e.preventDefault(); next(); }
-    if(e.code==='ArrowLeft'){  e.preventDefault(); prev(); }
-    if(e.code==='Space'){      e.preventDefault(); flip(); }
-  });
-
-  // swipe
-  cardEl.addEventListener('touchstart',(e)=>{
-    touchStartX = e.changedTouches[0].clientX;
-  },{passive:true});
-  cardEl.addEventListener('touchend',(e)=>{
-    if(touchStartX==null) return;
-    const dx = e.changedTouches[0].clientX - touchStartX;
-    touchStartX=null;
-    if(Math.abs(dx)>50){
-      if(dx<0) next();
-      else prev();
+    if (deck.length === 0) {
+      alert("有効なデータが見つかりませんでした。\n「表,裏」の形式か確認してください。");
+      return;
     }
-  },{passive:true});
 
-  // 進捗エクスポート
-  $('#btnExport').addEventListener('click',()=>{
-    const blob = new Blob([localStorage.getItem(LSKEY)||'{}'], {type:'application/json'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href=url;
-    a.download='flashcards_progress.json';
-    a.click();
-    setTimeout(()=>URL.revokeObjectURL(url),5000);
-  });
+    // ★ここでシャッフル（ランダム化）
+    shuffleDeck();
 
-  // 進捗インポート
-  $('#btnImport').addEventListener('click',()=>{
-    const inp = document.createElement('input');
-    inp.type='file';
-    inp.accept='.json';
-    inp.onchange = async ()=>{
-      const f = inp.files[0];
-      if(!f) return;
-      const js = await f.text();
-      localStorage.setItem(LSKEY, js);
-      loadState();
-      buildView();
-      index=0;
-      isFront=true;
-      draw();
-      playForCurrentSide();
-      toast('進捗を読み込みました');
-    };
-    inp.click();
-  });
-
-  $('#btnInstall').addEventListener('click',()=>{
-    alert(
-      '【ホーム画面に追加（iPhone Safari）】\n' +
-      '1) 公開したURLをSafariで開く\n' +
-      '2) 共有ボタン\n' +
-      '3) 下にスクロールして「ホーム画面に追加」\n' +
-      'これでアプリのように使えます。'
-    );
-  });
-
-  function toast(msg){
-    statusEl.textContent = msg;
-    setTimeout(()=>{
-      statusEl.textContent = isFront?'表':'裏';
-    },1600);
+    // 初期化
+    currentIndex = 0;
+    isFront = true;
+    render();
   }
 
-  // init
-  loadState();
-  draw();
-})();
+  // 配列をランダムに混ぜる（フィッシャー–イェーツのシャッフル）
+  function shuffleDeck() {
+    for (let i = deck.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+  }
+
+  // 画面描画
+  function render() {
+    if (deck.length === 0) return;
+
+    // 全部終わった場合
+    if (currentIndex >= deck.length) {
+      cardText.innerHTML = "<span class='finished'>学習完了！<br>お疲れ様でした🎉</span>";
+      sideLabel.style.display = 'none';
+      btnAction.textContent = "最初からリトライ";
+      statusText.textContent = `${deck.length} / ${deck.length}`;
+      return;
+    }
+
+    const card = deck[currentIndex];
+    
+    // テキスト表示（\n は改行に置換）
+    const textToShow = isFront ? card.front : card.back;
+    cardText.textContent = textToShow.replace(/\\n/g, '\n');
+
+    // ラベルと進捗表示
+    sideLabel.style.display = 'block';
+    sideLabel.textContent = isFront ? '表 (FRONT)' : '裏 (BACK)';
+    sideLabel.style.background = isFront ? '#38bdf8' : '#f472b6'; // 表は水色、裏はピンク
+    
+    statusText.textContent = `${currentIndex + 1} / ${deck.length}`;
+    btnAction.textContent = isFront ? "答えを見る" : "次のカードへ";
+  }
+
+  // 「次へ」ボタンを押したときの動き
+  function step() {
+    // データがない場合や完了時はリセット
+    if (deck.length === 0) return;
+    if (currentIndex >= deck.length) {
+      // リトライ処理（再シャッフルして最初へ）
+      shuffleDeck();
+      currentIndex = 0;
+      isFront = true;
+      render();
+      return;
+    }
+
+    if (isFront) {
+      // 表なら → 裏にする
+      isFront = false;
+    } else {
+      // 裏なら → 次のカードの表にする
+      isFront = true;
+      currentIndex++;
+    }
+    render();
+  }
 </script>
+
 </body>
 </html>
