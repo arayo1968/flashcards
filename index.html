@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Simple Flashcards v2</title>
+<title>Simple Flashcards v3</title>
 <style>
   :root {
     --bg: #0f172a;
@@ -33,35 +33,49 @@
     flex: 1;
   }
   
-  /* ヘッダーエリア */
+  /* ヘッダーエリア（横並びに変更） */
   header {
     margin-bottom: 16px;
     display: flex;
-    flex-direction: column;
-    gap: 10px;
+    flex-direction: row; /* 横並び */
+    gap: 16px; /* ボタンとチェックボックスの間隔 */
     align-items: center;
+    justify-content: center;
+    flex-wrap: wrap; /* 画面が極端に狭い場合は折り返す */
   }
-  .controls {
-    display: flex;
-    gap: 12px;
-    align-items: center;
-    background: #1e293b;
-    padding: 8px 16px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-  }
+
+  /* ファイル入力関連 */
   input[type="file"] { display: none; }
   .btn-file {
     background: #0ea5e9;
     color: #fff;
-    padding: 8px 16px;
-    border-radius: 6px;
+    padding: 10px 16px;
+    border-radius: 8px;
     font-size: 14px;
     cursor: pointer;
-    border: none;
     font-weight: bold;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
-  label { cursor: pointer; user-select: none; }
+  
+  /* チェックボックス */
+  .chk-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 14px;
+    background: #1e293b;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+  input[type="checkbox"] {
+    transform: scale(1.2);
+  }
 
   /* カードエリア */
   .card-area {
@@ -88,7 +102,7 @@
     font-weight: bold;
     box-shadow: 0 10px 25px rgba(0,0,0,0.3);
     white-space: pre-wrap;
-    overflow-y: auto; /* 長文対策 */
+    overflow-y: auto;
   }
   .label {
     position: absolute;
@@ -114,7 +128,7 @@
   /* 操作ボタンエリア */
   .action-area {
     display: grid;
-    grid-template-columns: 1fr 2fr; /* 戻る1 : 進む2 の比率 */
+    grid-template-columns: 1fr 2fr;
     gap: 10px;
     height: 60px;
     margin-bottom: 10px;
@@ -132,7 +146,6 @@
   .btn-prev { background: var(--btn-secondary); }
   .btn-next { background: var(--accent); color: #0f172a; font-size: 18px; }
 
-  /* 完了時のメッセージ */
   .finished { color: #4ade80; font-size: 20px; }
 </style>
 </head>
@@ -141,20 +154,20 @@
 <div class="container">
   <header>
     <label class="btn-file">
-      📂 ファイルを選択
-      <input type="file" id="fileInput" accept=".txt,.csv,.tsv">
+      📂 ファイル選択
+      <input type="file" id="fileInput">
     </label>
-    <div class="controls">
-      <label>
-        <input type="checkbox" id="chkShuffle"> シャッフルする
-      </label>
-    </div>
+    
+    <label class="chk-label">
+      <input type="checkbox" id="chkShuffle">
+      シャッフル
+    </label>
   </header>
 
   <div class="card-area" id="cardArea" onclick="stepNext()">
     <div class="label" id="sideLabel" style="display:none">FRONT</div>
     <div class="card" id="cardText">
-      ファイルを選択してください
+      上の「📂 ファイル選択」から<br>データを読み込んでください
     </div>
   </div>
 
@@ -167,10 +180,10 @@
 </div>
 
 <script>
-  let rawDeck = [];     // 読み込んだそのままのデータ
-  let playDeck = [];    // 表示用に並べたデータ（シャッフル済など）
-  let currentIndex = 0; // 現在のインデックス
-  let isFront = true;   // 表かどうか
+  let rawDeck = [];     
+  let playDeck = [];    
+  let currentIndex = 0; 
+  let isFront = true;   
   
   const fileInput = document.getElementById('fileInput');
   const chkShuffle = document.getElementById('chkShuffle');
@@ -179,41 +192,46 @@
   const statusText = document.getElementById('statusText');
   const btnNext = document.getElementById('btnNext');
 
-  // ファイル読み込み
   fileInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const text = await file.text();
-    parseText(text);
+
+    // ファイル読込失敗対策: try-catch
+    try {
+      const text = await file.text();
+      parseText(text);
+    } catch (err) {
+      alert("ファイルを読み込めませんでした。別の形式を試してください。");
+    }
+    // 同じファイルを再度選べるようにリセット
+    fileInput.value = '';
   });
 
-  // テキスト解析
   function parseText(text) {
     const lines = text.split(/\r?\n/).filter(line => line.trim() !== "");
-    const separator = lines[0] && lines[0].includes('\t') ? '\t' : ',';
+    // 何もなければカンマ区切りとみなす
+    const separator = (lines[0] && lines[0].includes('\t')) ? '\t' : ',';
 
     rawDeck = [];
     lines.forEach(line => {
       const parts = line.split(separator);
+      // カンマ等の区切りがない行は無視するか、2列目が空として処理
       if (parts.length >= 2) {
         rawDeck.push({ front: parts[0].trim(), back: parts[1].trim() });
       }
     });
 
     if (rawDeck.length === 0) {
-      alert("データが見つかりませんでした。\n「表,裏」の形式か確認してください。");
+      alert("有効なカードが見つかりませんでした。\n・ファイルの中身が空でないか\n・「表,裏」のようにカンマかタブで区切られているか\n確認してください。");
       return;
     }
 
     startSession();
   }
 
-  // セッション開始（デッキ構築と初期化）
   function startSession() {
-    // 元データをコピーしてプレイ用デッキを作る
     playDeck = [...rawDeck];
 
-    // チェックがあればシャッフル（山札を混ぜる）
     if (chkShuffle.checked) {
       shuffleArray(playDeck);
     }
@@ -223,7 +241,6 @@
     render();
   }
 
-  // フィッシャー–イェーツのシャッフル
   function shuffleArray(arr) {
     for (let i = arr.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -231,15 +248,13 @@
     }
   }
 
-  // 画面描画
   function render() {
     if (playDeck.length === 0) return;
 
-    // 完了画面
     if (currentIndex >= playDeck.length) {
       cardText.innerHTML = "<span class='finished'>学習完了！<br>お疲れ様でした🎉</span>";
       sideLabel.style.display = 'none';
-      btnNext.textContent = "最初から (リセット)";
+      btnNext.textContent = "最初から";
       statusText.textContent = `${playDeck.length} / ${playDeck.length}`;
       return;
     }
@@ -247,16 +262,55 @@
     const card = playDeck[currentIndex];
     const textToShow = isFront ? card.front : card.back;
     
-    // 表示更新
     cardText.textContent = textToShow.replace(/\\n/g, '\n');
     sideLabel.style.display = 'block';
     sideLabel.textContent = isFront ? '表 (FRONT)' : '裏 (BACK)';
-    sideLabel.style.background = isFront ? '#38bdf8' : '#f472b6'; // 水色 / ピンク
+    sideLabel.style.background = isFront ? '#38bdf8' : '#f472b6';
     
     statusText.textContent = `${currentIndex + 1} / ${playDeck.length}`;
     btnNext.textContent = isFront ? "答えを見る" : "次へ";
   }
 
-  // 「次へ」
-  function step
-    
+  function stepNext(e) {
+    if(e) e.stopPropagation();
+    if (playDeck.length === 0) return;
+
+    if (currentIndex >= playDeck.length) {
+      startSession();
+      return;
+    }
+
+    if (isFront) {
+      isFront = false;
+    } else {
+      isFront = true;
+      currentIndex++;
+    }
+    render();
+  }
+
+  function stepPrev(e) {
+    if(e) e.stopPropagation();
+    if (playDeck.length === 0) return;
+
+    if (currentIndex >= playDeck.length) {
+      currentIndex = playDeck.length - 1;
+      isFront = false;
+      render();
+      return;
+    }
+
+    if (currentIndex === 0 && isFront) return;
+
+    if (!isFront) {
+      isFront = true;
+    } else {
+      currentIndex--;
+      isFront = false;
+    }
+    render();
+  }
+</script>
+
+</body>
+</html>
