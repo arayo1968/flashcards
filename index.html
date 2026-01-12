@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Simple Flashcards</title>
+<title>Simple Flashcards v2</title>
 <style>
   :root {
     --bg: #0f172a;
@@ -11,12 +11,13 @@
     --text: #f1f5f9;
     --accent: #38bdf8;
     --border: #334155;
+    --btn-secondary: #475569;
   }
   body {
     margin: 0;
     background: var(--bg);
     color: var(--text);
-    font-family: sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     display: flex;
     flex-direction: column;
     height: 100vh;
@@ -25,7 +26,7 @@
   .container {
     width: 100%;
     max-width: 600px;
-    padding: 20px;
+    padding: 16px;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
@@ -34,21 +35,33 @@
   
   /* ヘッダーエリア */
   header {
-    margin-bottom: 20px;
-    text-align: center;
+    margin-bottom: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: center;
   }
-  input[type="file"] {
-    display: none; /* ファイル選択ボタンを隠してカスタムボタンにする */
+  .controls {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    background: #1e293b;
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
   }
+  input[type="file"] { display: none; }
   .btn-file {
-    background: #334155;
+    background: #0ea5e9;
     color: #fff;
     padding: 8px 16px;
     border-radius: 6px;
     font-size: 14px;
     cursor: pointer;
-    display: inline-block;
+    border: none;
+    font-weight: bold;
   }
+  label { cursor: pointer; user-select: none; }
 
   /* カードエリア */
   .card-area {
@@ -57,14 +70,16 @@
     flex-direction: column;
     justify-content: center;
     position: relative;
-    cursor: pointer; /* タップできることを示す */
+    cursor: pointer; 
+    min-height: 200px;
   }
   .card {
     background: var(--card-bg);
     border: 1px solid var(--border);
     border-radius: 16px;
     padding: 40px 20px;
-    min-height: 200px;
+    height: 100%;
+    max-height: 60vh;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -72,7 +87,8 @@
     font-size: 24px;
     font-weight: bold;
     box-shadow: 0 10px 25px rgba(0,0,0,0.3);
-    white-space: pre-wrap; /* 改行対応 */
+    white-space: pre-wrap;
+    overflow-y: auto; /* 長文対策 */
   }
   .label {
     position: absolute;
@@ -84,35 +100,37 @@
     padding: 4px 8px;
     border-radius: 4px;
     font-weight: bold;
+    z-index: 10;
   }
   
   /* 進捗表示 */
   .status {
     text-align: center;
-    margin-top: 10px;
+    margin: 10px 0;
     color: #94a3b8;
     font-size: 14px;
   }
 
-  /* 操作ボタン */
+  /* 操作ボタンエリア */
   .action-area {
-    margin-top: 20px;
+    display: grid;
+    grid-template-columns: 1fr 2fr; /* 戻る1 : 進む2 の比率 */
+    gap: 10px;
     height: 60px;
+    margin-bottom: 10px;
   }
-  .btn-main {
-    width: 100%;
-    height: 100%;
-    background: var(--accent);
-    color: #0f172a;
+  button {
     border: none;
     border-radius: 12px;
-    font-size: 18px;
+    font-size: 16px;
     font-weight: bold;
     cursor: pointer;
+    color: #fff;
   }
-  .btn-main:active {
-    opacity: 0.8;
-  }
+  button:active { opacity: 0.8; transform: translateY(1px); }
+  
+  .btn-prev { background: var(--btn-secondary); }
+  .btn-next { background: var(--accent); color: #0f172a; font-size: 18px; }
 
   /* 完了時のメッセージ */
   .finished { color: #4ade80; font-size: 20px; }
@@ -123,142 +141,122 @@
 <div class="container">
   <header>
     <label class="btn-file">
-      📂 テキストファイルを選択
+      📂 ファイルを選択
       <input type="file" id="fileInput" accept=".txt,.csv,.tsv">
     </label>
-    <div style="font-size:12px; color:#64748b; margin-top:5px;">
-      形式: 表,裏 (カンマまたはタブ区切り)
+    <div class="controls">
+      <label>
+        <input type="checkbox" id="chkShuffle"> シャッフルする
+      </label>
     </div>
   </header>
 
-  <div class="card-area" id="cardArea" onclick="step()">
+  <div class="card-area" id="cardArea" onclick="stepNext()">
+    <div class="label" id="sideLabel" style="display:none">FRONT</div>
     <div class="card" id="cardText">
       ファイルを選択してください
     </div>
-    <div class="label" id="sideLabel" style="display:none">FRONT</div>
   </div>
 
   <div class="status" id="statusText">0 / 0</div>
 
   <div class="action-area">
-    <button class="btn-main" id="btnAction" onclick="step()">次へ</button>
+    <button class="btn-prev" id="btnPrev" onclick="stepPrev(event)">戻る</button>
+    <button class="btn-next" id="btnNext" onclick="stepNext(event)">次へ</button>
   </div>
 </div>
 
 <script>
-  let deck = [];        // カードデータ配列
-  let currentIndex = 0; // 今何枚目か
-  let isFront = true;   // 今「表」を表示しているか
+  let rawDeck = [];     // 読み込んだそのままのデータ
+  let playDeck = [];    // 表示用に並べたデータ（シャッフル済など）
+  let currentIndex = 0; // 現在のインデックス
+  let isFront = true;   // 表かどうか
   
   const fileInput = document.getElementById('fileInput');
+  const chkShuffle = document.getElementById('chkShuffle');
   const cardText = document.getElementById('cardText');
   const sideLabel = document.getElementById('sideLabel');
   const statusText = document.getElementById('statusText');
-  const btnAction = document.getElementById('btnAction');
+  const btnNext = document.getElementById('btnNext');
 
-  // ファイル読み込み処理
+  // ファイル読み込み
   fileInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
     const text = await file.text();
-    parseAndLoad(text);
+    parseText(text);
   });
 
-  // テキスト解析 & シャッフル
-  function parseAndLoad(text) {
-    // 改行で分割して行にする
+  // テキスト解析
+  function parseText(text) {
     const lines = text.split(/\r?\n/).filter(line => line.trim() !== "");
-    
-    // 区切り文字の推定（タブがあればタブ、なければカンマ）
     const separator = lines[0] && lines[0].includes('\t') ? '\t' : ',';
 
-    deck = [];
+    rawDeck = [];
     lines.forEach(line => {
       const parts = line.split(separator);
-      // 2列以上ある場合のみ採用
       if (parts.length >= 2) {
-        deck.push({
-          front: parts[0].trim(),
-          back: parts[1].trim()
-        });
+        rawDeck.push({ front: parts[0].trim(), back: parts[1].trim() });
       }
     });
 
-    if (deck.length === 0) {
-      alert("有効なデータが見つかりませんでした。\n「表,裏」の形式か確認してください。");
+    if (rawDeck.length === 0) {
+      alert("データが見つかりませんでした。\n「表,裏」の形式か確認してください。");
       return;
     }
 
-    // ★ここでシャッフル（ランダム化）
-    shuffleDeck();
+    startSession();
+  }
 
-    // 初期化
+  // セッション開始（デッキ構築と初期化）
+  function startSession() {
+    // 元データをコピーしてプレイ用デッキを作る
+    playDeck = [...rawDeck];
+
+    // チェックがあればシャッフル（山札を混ぜる）
+    if (chkShuffle.checked) {
+      shuffleArray(playDeck);
+    }
+
     currentIndex = 0;
     isFront = true;
     render();
   }
 
-  // 配列をランダムに混ぜる（フィッシャー–イェーツのシャッフル）
-  function shuffleDeck() {
-    for (let i = deck.length - 1; i > 0; i--) {
+  // フィッシャー–イェーツのシャッフル
+  function shuffleArray(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
-      [deck[i], deck[j]] = [deck[j], deck[i]];
+      [arr[i], arr[j]] = [arr[j], arr[i]];
     }
   }
 
   // 画面描画
   function render() {
-    if (deck.length === 0) return;
+    if (playDeck.length === 0) return;
 
-    // 全部終わった場合
-    if (currentIndex >= deck.length) {
+    // 完了画面
+    if (currentIndex >= playDeck.length) {
       cardText.innerHTML = "<span class='finished'>学習完了！<br>お疲れ様でした🎉</span>";
       sideLabel.style.display = 'none';
-      btnAction.textContent = "最初からリトライ";
-      statusText.textContent = `${deck.length} / ${deck.length}`;
+      btnNext.textContent = "最初から (リセット)";
+      statusText.textContent = `${playDeck.length} / ${playDeck.length}`;
       return;
     }
 
-    const card = deck[currentIndex];
-    
-    // テキスト表示（\n は改行に置換）
+    const card = playDeck[currentIndex];
     const textToShow = isFront ? card.front : card.back;
+    
+    // 表示更新
     cardText.textContent = textToShow.replace(/\\n/g, '\n');
-
-    // ラベルと進捗表示
     sideLabel.style.display = 'block';
     sideLabel.textContent = isFront ? '表 (FRONT)' : '裏 (BACK)';
-    sideLabel.style.background = isFront ? '#38bdf8' : '#f472b6'; // 表は水色、裏はピンク
+    sideLabel.style.background = isFront ? '#38bdf8' : '#f472b6'; // 水色 / ピンク
     
-    statusText.textContent = `${currentIndex + 1} / ${deck.length}`;
-    btnAction.textContent = isFront ? "答えを見る" : "次のカードへ";
+    statusText.textContent = `${currentIndex + 1} / ${playDeck.length}`;
+    btnNext.textContent = isFront ? "答えを見る" : "次へ";
   }
 
-  // 「次へ」ボタンを押したときの動き
-  function step() {
-    // データがない場合や完了時はリセット
-    if (deck.length === 0) return;
-    if (currentIndex >= deck.length) {
-      // リトライ処理（再シャッフルして最初へ）
-      shuffleDeck();
-      currentIndex = 0;
-      isFront = true;
-      render();
-      return;
-    }
-
-    if (isFront) {
-      // 表なら → 裏にする
-      isFront = false;
-    } else {
-      // 裏なら → 次のカードの表にする
-      isFront = true;
-      currentIndex++;
-    }
-    render();
-  }
-</script>
-
-</body>
-</html>
+  // 「次へ」
+  function step
+    
