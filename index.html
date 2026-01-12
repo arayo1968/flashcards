@@ -3,13 +3,14 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Simple Flashcards v3</title>
+<title>Simple Flashcards v4</title>
 <style>
   :root {
     --bg: #0f172a;
     --card-bg: #1e293b;
     --text: #f1f5f9;
     --accent: #38bdf8;
+    --success: #22c55e;
     --border: #334155;
     --btn-secondary: #475569;
   }
@@ -33,15 +34,15 @@
     flex: 1;
   }
   
-  /* ヘッダーエリア（横並びに変更） */
+  /* ヘッダーエリア */
   header {
-    margin-bottom: 16px;
+    margin-bottom: 12px;
     display: flex;
-    flex-direction: row; /* 横並び */
-    gap: 16px; /* ボタンとチェックボックスの間隔 */
+    flex-direction: row;
+    gap: 12px;
     align-items: center;
     justify-content: center;
-    flex-wrap: wrap; /* 画面が極端に狭い場合は折り返す */
+    flex-wrap: wrap;
   }
 
   /* ファイル入力関連 */
@@ -49,15 +50,13 @@
   .btn-file {
     background: #0ea5e9;
     color: #fff;
-    padding: 10px 16px;
+    padding: 8px 12px;
     border-radius: 8px;
-    font-size: 14px;
+    font-size: 13px;
     cursor: pointer;
     font-weight: bold;
-    white-space: nowrap;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
   }
   
   /* チェックボックス */
@@ -67,14 +66,20 @@
     gap: 6px;
     cursor: pointer;
     user-select: none;
-    font-size: 14px;
+    font-size: 13px;
     background: #1e293b;
     padding: 8px 12px;
     border-radius: 8px;
     border: 1px solid var(--border);
   }
-  input[type="checkbox"] {
-    transform: scale(1.2);
+  input[type="checkbox"] { transform: scale(1.1); }
+
+  /* 残り枚数表示 */
+  .deck-info {
+    text-align: center;
+    font-size: 14px;
+    color: #94a3b8;
+    margin-bottom: 8px;
   }
 
   /* カードエリア */
@@ -117,36 +122,32 @@
     z-index: 10;
   }
   
-  /* 進捗表示 */
-  .status {
-    text-align: center;
-    margin: 10px 0;
-    color: #94a3b8;
-    font-size: 14px;
-  }
-
   /* 操作ボタンエリア */
-  .action-area {
+  .action-row {
     display: grid;
-    grid-template-columns: 1fr 2fr;
+    grid-template-columns: 1fr 1fr 2fr; /* 戻る:覚えた:次へ */
     gap: 10px;
     height: 60px;
+    margin-top: 10px;
     margin-bottom: 10px;
   }
   button {
     border: none;
     border-radius: 12px;
-    font-size: 16px;
+    font-size: 14px;
     font-weight: bold;
     cursor: pointer;
     color: #fff;
+    padding: 0;
   }
   button:active { opacity: 0.8; transform: translateY(1px); }
   
   .btn-prev { background: var(--btn-secondary); }
   .btn-next { background: var(--accent); color: #0f172a; font-size: 18px; }
+  .btn-known { background: var(--success); color: #fff; }
 
-  .finished { color: #4ade80; font-size: 20px; }
+  .finished-msg { color: #4ade80; font-size: 20px; line-height: 1.6; }
+  .sub-msg { font-size: 14px; color: #cbd5e1; margin-top: 10px; display:block; }
 </style>
 </head>
 <body>
@@ -157,12 +158,14 @@
       📂 ファイル選択
       <input type="file" id="fileInput">
     </label>
-    
     <label class="chk-label">
       <input type="checkbox" id="chkShuffle">
       シャッフル
     </label>
+    <button class="btn-file" style="background:#64748b" onclick="fullReset()">全リセット</button>
   </header>
+
+  <div class="deck-info" id="deckInfo">カード未読み込み</div>
 
   <div class="card-area" id="cardArea" onclick="stepNext()">
     <div class="label" id="sideLabel" style="display:none">FRONT</div>
@@ -171,69 +174,76 @@
     </div>
   </div>
 
-  <div class="status" id="statusText">0 / 0</div>
-
-  <div class="action-area">
+  <div class="action-row">
     <button class="btn-prev" id="btnPrev" onclick="stepPrev(event)">戻る</button>
+    <button class="btn-known" id="btnKnown" onclick="markAsKnown(event)">覚えた！<br><span style="font-size:10px">(次から出ない)</span></button>
     <button class="btn-next" id="btnNext" onclick="stepNext(event)">次へ</button>
   </div>
 </div>
 
 <script>
-  let rawDeck = [];     
-  let playDeck = [];    
-  let currentIndex = 0; 
-  let isFront = true;   
+  let rawDeck = [];       // ファイルから読み込んだ全データ（マスター）
+  let activeDeck = [];    // 次の周に残るデータ（未習得のみ）
+  
+  let currentSession = []; // 今の周回で表示しているリスト
+  let currentIndex = 0;    // 今の周回の何番目か
+  let isFront = true;      // 表かどうか
   
   const fileInput = document.getElementById('fileInput');
   const chkShuffle = document.getElementById('chkShuffle');
   const cardText = document.getElementById('cardText');
   const sideLabel = document.getElementById('sideLabel');
-  const statusText = document.getElementById('statusText');
+  const deckInfo = document.getElementById('deckInfo');
   const btnNext = document.getElementById('btnNext');
+  const btnKnown = document.getElementById('btnKnown');
 
   fileInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
-    // ファイル読込失敗対策: try-catch
     try {
       const text = await file.text();
       parseText(text);
     } catch (err) {
-      alert("ファイルを読み込めませんでした。別の形式を試してください。");
+      alert("読み込みエラー");
     }
-    // 同じファイルを再度選べるようにリセット
     fileInput.value = '';
   });
 
   function parseText(text) {
     const lines = text.split(/\r?\n/).filter(line => line.trim() !== "");
-    // 何もなければカンマ区切りとみなす
     const separator = (lines[0] && lines[0].includes('\t')) ? '\t' : ',';
 
     rawDeck = [];
     lines.forEach(line => {
       const parts = line.split(separator);
-      // カンマ等の区切りがない行は無視するか、2列目が空として処理
       if (parts.length >= 2) {
         rawDeck.push({ front: parts[0].trim(), back: parts[1].trim() });
       }
     });
 
     if (rawDeck.length === 0) {
-      alert("有効なカードが見つかりませんでした。\n・ファイルの中身が空でないか\n・「表,裏」のようにカンマかタブで区切られているか\n確認してください。");
+      alert("有効なカードがありません");
       return;
     }
 
-    startSession();
+    // 全リセット状態で開始
+    fullReset();
   }
 
-  function startSession() {
-    playDeck = [...rawDeck];
+  // 最初からやり直す（覚えた記録も消す）
+  function fullReset() {
+    if(rawDeck.length === 0) return;
+    activeDeck = [...rawDeck]; // 全カードをアクティブに戻す
+    startRound();
+  }
+
+  // 新しい周回を始める
+  function startRound() {
+    // アクティブなカードを今回のセッション用にコピー
+    currentSession = [...activeDeck];
 
     if (chkShuffle.checked) {
-      shuffleArray(playDeck);
+      shuffleArray(currentSession);
     }
 
     currentIndex = 0;
@@ -248,18 +258,43 @@
     }
   }
 
-  function render() {
-    if (playDeck.length === 0) return;
+  // 「覚えた」ボタン
+  function markAsKnown(e) {
+    if(e) e.stopPropagation();
+    if (currentSession.length === 0 || currentIndex >= currentSession.length) return;
 
-    if (currentIndex >= playDeck.length) {
-      cardText.innerHTML = "<span class='finished'>学習完了！<br>お疲れ様でした🎉</span>";
-      sideLabel.style.display = 'none';
-      btnNext.textContent = "最初から";
-      statusText.textContent = `${playDeck.length} / ${playDeck.length}`;
+    // 現在表示中のカードオブジェクトを取得
+    const currentCard = currentSession[currentIndex];
+
+    // activeDeck (次の周用リスト) からこのカードを除外
+    activeDeck = activeDeck.filter(c => c !== currentCard);
+
+    // 強制的に次へ進む
+    stepNext();
+  }
+
+  function render() {
+    // まだファイルを読み込んでない時
+    if (rawDeck.length === 0) return;
+
+    // ヘッダー情報更新
+    deckInfo.textContent = `残り: ${activeDeck.length}枚 / 全体: ${rawDeck.length}枚`;
+
+    // 全て覚えきった（アクティブが0）かつ、今の周回も終わった場合
+    if (activeDeck.length === 0 && currentIndex >= currentSession.length) {
+       showFinishScreen(true);
+       return;
+    }
+
+    // 今の周回が終わった場合
+    if (currentIndex >= currentSession.length) {
+      showFinishScreen(false);
       return;
     }
 
-    const card = playDeck[currentIndex];
+    // 通常表示
+    btnKnown.style.visibility = 'visible'; // ボタン表示
+    const card = currentSession[currentIndex];
     const textToShow = isFront ? card.front : card.back;
     
     cardText.textContent = textToShow.replace(/\\n/g, '\n');
@@ -267,16 +302,46 @@
     sideLabel.textContent = isFront ? '表 (FRONT)' : '裏 (BACK)';
     sideLabel.style.background = isFront ? '#38bdf8' : '#f472b6';
     
-    statusText.textContent = `${currentIndex + 1} / ${playDeck.length}`;
     btnNext.textContent = isFront ? "答えを見る" : "次へ";
+  }
+
+  function showFinishScreen(isAllClear) {
+    sideLabel.style.display = 'none';
+    btnKnown.style.visibility = 'hidden'; // 終了画面では隠す
+
+    if (isAllClear) {
+      cardText.innerHTML = `
+        <span class='finished-msg'>全カード制覇！<br>おめでとうございます🎉</span>
+        <span class='sub-msg'>「全リセット」を押すと最初から復習できます</span>
+      `;
+      btnNext.textContent = "全リセットして再開";
+      // 次へボタンの挙動をリセット用に変えるため、フラグ等は管理せずクリック処理で判断させる
+    } else {
+      cardText.innerHTML = `
+        <span class='finished-msg'>この周は終了！</span>
+        <span class='sub-msg'>
+          覚えたカード: ${currentSession.length - activeDeck.length}枚<br>
+          <br>
+          次は、まだの <b>${activeDeck.length}枚</b> で<br>スタートします
+        </span>
+      `;
+      btnNext.textContent = "次の周をスタート";
+    }
   }
 
   function stepNext(e) {
     if(e) e.stopPropagation();
-    if (playDeck.length === 0) return;
+    if (rawDeck.length === 0) return;
 
-    if (currentIndex >= playDeck.length) {
-      startSession();
+    // 終了画面の場合の分岐
+    if (currentIndex >= currentSession.length) {
+      // 全クリ時 → 全リセット
+      if (activeDeck.length === 0) {
+        fullReset();
+      } else {
+        // 通常クリア時 → 次の周へ
+        startRound();
+      }
       return;
     }
 
@@ -291,10 +356,11 @@
 
   function stepPrev(e) {
     if(e) e.stopPropagation();
-    if (playDeck.length === 0) return;
+    if (currentSession.length === 0) return;
 
-    if (currentIndex >= playDeck.length) {
-      currentIndex = playDeck.length - 1;
+    // 終了画面から戻る
+    if (currentIndex >= currentSession.length) {
+      currentIndex = currentSession.length - 1;
       isFront = false;
       render();
       return;
