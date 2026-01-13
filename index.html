@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Simple Flashcards v5</title>
+<title>Simple Flashcards v6</title>
 <style>
   :root {
     --bg: #0f172a;
@@ -11,6 +11,7 @@
     --text: #f1f5f9;
     --accent: #38bdf8;
     --success: #22c55e;
+    --error: #ef4444;
     --border: #334155;
     --btn-secondary: #475569;
   }
@@ -34,7 +35,6 @@
     flex: 1;
   }
   
-  /* ヘッダーエリア */
   header {
     margin-bottom: 12px;
     display: flex;
@@ -45,21 +45,21 @@
     flex-wrap: wrap;
   }
 
-  /* ファイル入力関連 */
+  /* ファイル入力 */
   input[type="file"] { display: none; }
   .btn-file {
     background: #0ea5e9;
     color: #fff;
-    padding: 8px 12px;
+    padding: 10px 14px;
     border-radius: 8px;
-    font-size: 13px;
+    font-size: 14px;
     cursor: pointer;
     font-weight: bold;
     display: inline-flex;
     align-items: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
   }
   
-  /* チェックボックス */
   .chk-label {
     display: flex;
     align-items: center;
@@ -74,7 +74,6 @@
   }
   input[type="checkbox"] { transform: scale(1.1); }
 
-  /* 学習状況インジケーター（左右配置） */
   .stats-bar {
     display: flex;
     justify-content: space-between;
@@ -83,10 +82,9 @@
     margin-bottom: 8px;
     padding: 0 4px;
   }
-  .stat-left { color: #facc15; font-weight: bold; } /* 黄色で強調 */
+  .stat-left { color: #facc15; font-weight: bold; }
   .stat-right { color: #94a3b8; }
 
-  /* カードエリア */
   .card-area {
     flex: 1;
     display: flex;
@@ -113,6 +111,11 @@
     white-space: pre-wrap;
     overflow-y: auto;
   }
+  
+  /* エラー時の表示スタイル */
+  .error-msg { font-size: 16px; color: var(--error); text-align: left; }
+  .loading-msg { font-size: 18px; color: var(--accent); }
+
   .label {
     position: absolute;
     top: -10px;
@@ -126,7 +129,6 @@
     z-index: 10;
   }
   
-  /* 下部ステータス（現在の位置） */
   .position-info {
     text-align: center;
     font-size: 12px;
@@ -134,10 +136,9 @@
     margin-top: 5px;
   }
 
-  /* 操作ボタンエリア */
   .action-row {
     display: grid;
-    grid-template-columns: 1fr 1fr 2fr; /* 戻る:覚えた:次へ */
+    grid-template-columns: 1fr 1fr 2fr;
     gap: 10px;
     height: 60px;
     margin-top: 10px;
@@ -185,7 +186,7 @@
   <div class="card-area" id="cardArea" onclick="stepNext()">
     <div class="label" id="sideLabel" style="display:none">FRONT</div>
     <div class="card" id="cardText">
-      上の「📂 ファイル選択」から<br>データを読み込んでください
+      上の「📂 ファイル選択」から<br>データを選んでください
     </div>
   </div>
 
@@ -193,17 +194,17 @@
 
   <div class="action-row">
     <button class="btn-prev" id="btnPrev" onclick="stepPrev(event)">戻る</button>
-    <button class="btn-known" id="btnKnown" onclick="markAsKnown(event)">覚えた！<br><span style="font-size:10px">(リストから消す)</span></button>
+    <button class="btn-known" id="btnKnown" onclick="markAsKnown(event)">覚えた！</button>
     <button class="btn-next" id="btnNext" onclick="stepNext(event)">次へ</button>
   </div>
 </div>
 
 <script>
-  let rawDeck = [];       // 全データ
-  let activeDeck = [];    // 未習得データ
-  let currentSession = []; // 今の周回用リスト
-  let currentIndex = 0;    // 今の周回の位置
-  let isFront = true;      // 表裏フラグ
+  let rawDeck = [];       
+  let activeDeck = [];    
+  let currentSession = []; 
+  let currentIndex = 0;    
+  let isFront = true;      
   
   const fileInput = document.getElementById('fileInput');
   const chkShuffle = document.getElementById('chkShuffle');
@@ -213,60 +214,76 @@
   const lblRemaining = document.getElementById('lblRemaining');
   const lblTotal = document.getElementById('lblTotal');
   const lblPosition = document.getElementById('lblPosition');
-
   const btnNext = document.getElementById('btnNext');
   const btnKnown = document.getElementById('btnKnown');
 
-  // ファイル読み込み
   fileInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+
+    // 読み込み中表示
+    cardText.innerHTML = "<span class='loading-msg'>ファイルを解析中...</span>";
+    sideLabel.style.display = 'none';
+
     try {
       const text = await file.text();
       parseText(text);
     } catch (err) {
-      alert("読み込みエラー");
+      showError("ファイルの読み込みに失敗しました。<br>文字コードや形式を確認してください。");
     }
     fileInput.value = '';
   });
 
+  function showError(msg) {
+    cardText.innerHTML = `<div class='error-msg'>⚠️ エラー<br>${msg}</div>`;
+    sideLabel.style.display = 'none';
+  }
+
   function parseText(text) {
     const lines = text.split(/\r?\n/).filter(line => line.trim() !== "");
-    const separator = (lines[0] && lines[0].includes('\t')) ? '\t' : ',';
+    
+    // 区切り文字の自動判定（より詳細に）
+    let separator = ',';
+    if (lines[0] && lines[0].includes('\t')) {
+        separator = '\t';
+    }
 
     rawDeck = [];
     lines.forEach((line, idx) => {
+      // 意図的にカンマやタブで区切れるかチェック
       const parts = line.split(separator);
       if (parts.length >= 2) {
-        // idを付与して管理を確実にする
         rawDeck.push({ 
           id: idx,
           front: parts[0].trim(), 
-          back: parts[1].trim() 
+          back: parts.slice(1).join(separator).trim() // 2つ目以降に区切り文字があっても裏面として結合
         });
       }
     });
 
     if (rawDeck.length === 0) {
-      alert("有効なカードがありません");
+      showError(
+        `カードが見つかりませんでした。<br><br>` +
+        `読み込んだ行数: ${lines.length}行<br>` +
+        `区切り文字: ${separator === '\t' ? 'タブ' : 'カンマ(,)'}<br><br>` +
+        `【対策】<br>1行に「表」と「裏」が区切り文字で書かれているか確認してください。<br>` +
+        `例: Apple,りんご`
+      );
       return;
     }
+
     fullReset();
   }
 
   function fullReset() {
     if(rawDeck.length === 0) return;
-    activeDeck = [...rawDeck]; // 全カード復活
+    activeDeck = [...rawDeck];
     startRound();
   }
 
   function startRound() {
     currentSession = [...activeDeck];
-
-    if (chkShuffle.checked) {
-      shuffleArray(currentSession);
-    }
-
+    if (chkShuffle.checked) shuffleArray(currentSession);
     currentIndex = 0;
     isFront = true;
     render();
@@ -282,18 +299,12 @@
   function markAsKnown(e) {
     if(e) e.stopPropagation();
     if (currentSession.length === 0 || currentIndex >= currentSession.length) return;
-
     const currentCard = currentSession[currentIndex];
-    
-    // IDを使って確実にactiveDeckから削除
     activeDeck = activeDeck.filter(c => c.id !== currentCard.id);
-
-    // 強制的に次へ
     stepNext();
   }
 
   function render() {
-    // 1. ヘッダー情報の更新（ここが「残り数」です）
     if (rawDeck.length > 0) {
         lblRemaining.textContent = `あと ${activeDeck.length} 枚`;
         lblTotal.textContent = `全 ${rawDeck.length} 枚`;
@@ -304,19 +315,15 @@
 
     if (rawDeck.length === 0) return;
 
-    // 2. 完了判定
-    // A: 全クリ（未習得0 かつ今の周も終わり）
     if (activeDeck.length === 0 && currentIndex >= currentSession.length) {
        showFinishScreen(true);
        return;
     }
-    // B: この周回が終わり
     if (currentIndex >= currentSession.length) {
       showFinishScreen(false);
       return;
     }
 
-    // 3. 通常表示
     btnKnown.style.visibility = 'visible';
     const card = currentSession[currentIndex];
     const textToShow = isFront ? card.front : card.back;
@@ -327,15 +334,13 @@
     sideLabel.style.background = isFront ? '#38bdf8' : '#f472b6';
     
     btnNext.textContent = isFront ? "答えを見る" : "次へ";
-
-    // 下部：今の周回の進捗
     lblPosition.textContent = `この周: ${currentIndex + 1} / ${currentSession.length}`;
   }
 
   function showFinishScreen(isAllClear) {
     sideLabel.style.display = 'none';
     btnKnown.style.visibility = 'hidden';
-    lblPosition.textContent = ''; // 完了時は消す
+    lblPosition.textContent = ''; 
 
     if (isAllClear) {
       cardText.innerHTML = `
@@ -344,7 +349,6 @@
       `;
       btnNext.textContent = "全リセットして再開";
     } else {
-      const learnedCount = currentSession.length - activeDeck.length; // 簡易計算
       cardText.innerHTML = `
         <span class='finished-msg'>この周は終了！</span>
         <span class='sub-msg'>
@@ -356,5 +360,33 @@
   }
 
   function stepNext(e) {
-    if(e) e.stopPropagation
-    
+    if(e) e.stopPropagation();
+    if (rawDeck.length === 0) return;
+    if (currentIndex >= currentSession.length) {
+      if (activeDeck.length === 0) fullReset();
+      else startRound();
+      return;
+    }
+    if (isFront) isFront = false;
+    else { isFront = true; currentIndex++; }
+    render();
+  }
+
+  function stepPrev(e) {
+    if(e) e.stopPropagation();
+    if (currentSession.length === 0) return;
+    if (currentIndex >= currentSession.length) {
+      currentIndex = currentSession.length - 1;
+      isFront = false;
+      render();
+      return;
+    }
+    if (currentIndex === 0 && isFront) return;
+    if (!isFront) isFront = true;
+    else { currentIndex--; isFront = false; }
+    render();
+  }
+</script>
+
+</body>
+</html>
