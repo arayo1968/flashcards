@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Simple Flashcards v6</title>
+<title>Simple Flashcards v9 (Skip)</title>
 <style>
   :root {
     --bg: #0f172a;
@@ -74,6 +74,12 @@
   }
   input[type="checkbox"] { transform: scale(1.1); }
 
+  .btn-clear {
+    background: #ef4444;
+    font-size: 12px;
+    padding: 8px 12px;
+  }
+
   .stats-bar {
     display: flex;
     justify-content: space-between;
@@ -112,9 +118,9 @@
     overflow-y: auto;
   }
   
-  /* エラー時の表示スタイル */
   .error-msg { font-size: 16px; color: var(--error); text-align: left; }
   .loading-msg { font-size: 18px; color: var(--accent); }
+  .info-msg { font-size: 16px; color: var(--accent); margin-bottom: 10px; display:block; }
 
   .label {
     position: absolute;
@@ -129,11 +135,46 @@
     z-index: 10;
   }
   
+  /* フッター操作系（スキップボタン等） */
+  .footer-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    margin-top: 10px;
+  }
   .position-info {
+    font-size: 14px;
+    color: #cbd5e1;
+    min-width: 80px;
     text-align: center;
-    font-size: 12px;
+  }
+  /* スキップボタン */
+  .btn-skip {
+    background: #334155;
+    color: #94a3b8;
+    border: 1px solid #475569;
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  .btn-skip:active { background: #475569; color: #fff; }
+
+  /* ジャンプボタン（少し下に配置） */
+  .jump-container {
+    text-align: center;
+    margin-top: 8px;
+    height: 24px; /* 高さ確保 */
+  }
+  .btn-jump {
+    background: transparent;
+    border: none;
     color: #64748b;
-    margin-top: 5px;
+    font-size: 12px;
+    text-decoration: underline;
+    cursor: pointer;
   }
 
   .action-row {
@@ -141,7 +182,7 @@
     grid-template-columns: 1fr 1fr 2fr;
     gap: 10px;
     height: 60px;
-    margin-top: 10px;
+    margin-top: 5px;
     margin-bottom: 10px;
   }
   button {
@@ -153,11 +194,11 @@
     color: #fff;
     padding: 0;
   }
-  button:active { opacity: 0.8; transform: translateY(1px); }
-  
+  .btn-main-btn { /* 共通クラス */ }
   .btn-prev { background: var(--btn-secondary); }
   .btn-next { background: var(--accent); color: #0f172a; font-size: 18px; }
   .btn-known { background: var(--success); color: #fff; }
+  button:active { opacity: 0.8; transform: translateY(1px); }
 
   .finished-msg { color: #4ade80; font-size: 20px; line-height: 1.6; }
   .sub-msg { font-size: 14px; color: #cbd5e1; margin-top: 10px; display:block; }
@@ -175,7 +216,7 @@
       <input type="checkbox" id="chkShuffle">
       シャッフル
     </label>
-    <button class="btn-file" style="background:#64748b" onclick="fullReset()">全リセット</button>
+    <button class="btn-file btn-clear" onclick="clearData()">保存削除</button>
   </header>
 
   <div class="stats-bar">
@@ -190,7 +231,15 @@
     </div>
   </div>
 
-  <div class="position-info" id="lblPosition"></div>
+  <div class="footer-controls">
+    <button class="btn-skip" id="btnSkipPrev" onclick="skipIndex(-1)">-10</button>
+    <span class="position-info" id="lblPosition">-- / --</span>
+    <button class="btn-skip" id="btnSkipNext" onclick="skipIndex(1)">+10</button>
+  </div>
+  
+  <div class="jump-container">
+    <button class="btn-jump" id="btnJump" onclick="jumpToCard(event)" style="display:none;">No.を指定して移動</button>
+  </div>
 
   <div class="action-row">
     <button class="btn-prev" id="btnPrev" onclick="stepPrev(event)">戻る</button>
@@ -200,12 +249,17 @@
 </div>
 
 <script>
+  // ★ ここでスキップ枚数を設定できます ★
+  const SKIP_STEP = 10; 
+  
+  const STORAGE_KEY = 'fc_data_v9'; 
+
   let rawDeck = [];       
   let activeDeck = [];    
   let currentSession = []; 
   let currentIndex = 0;    
   let isFront = true;      
-  
+
   const fileInput = document.getElementById('fileInput');
   const chkShuffle = document.getElementById('chkShuffle');
   const cardText = document.getElementById('cardText');
@@ -214,14 +268,76 @@
   const lblRemaining = document.getElementById('lblRemaining');
   const lblTotal = document.getElementById('lblTotal');
   const lblPosition = document.getElementById('lblPosition');
+  
+  const btnSkipPrev = document.getElementById('btnSkipPrev');
+  const btnSkipNext = document.getElementById('btnSkipNext');
+  const btnJump = document.getElementById('btnJump');
+
   const btnNext = document.getElementById('btnNext');
   const btnKnown = document.getElementById('btnKnown');
 
+  // 起動時設定
+  window.addEventListener('DOMContentLoaded', () => {
+    // ボタンのラベルを設定値に合わせる
+    btnSkipPrev.textContent = `-${SKIP_STEP}`;
+    btnSkipNext.textContent = `+${SKIP_STEP}`;
+    
+    loadFromStorage();
+  });
+
+  // --- 保存・復元 ---
+  function saveToStorage() {
+    const data = {
+      rawDeck: rawDeck,
+      activeDeck: activeDeck,
+      savedIndex: currentIndex 
+    };
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch(e) {}
+  }
+
+  function loadFromStorage() {
+    try {
+      const json = localStorage.getItem(STORAGE_KEY);
+      if (!json) return;
+
+      const data = JSON.parse(json);
+      if (data.rawDeck && data.rawDeck.length > 0) {
+        rawDeck = data.rawDeck;
+        activeDeck = data.activeDeck || [...rawDeck];
+        
+        // 復元UI準備
+        cardText.innerHTML = "<span class='info-msg'>保存データを復元しました</span><br>▼ タップして再開";
+        sideLabel.style.display = 'none';
+        
+        currentSession = [...activeDeck];
+        if (chkShuffle.checked) shuffleArray(currentSession);
+
+        if (typeof data.savedIndex === 'number' && data.savedIndex < currentSession.length) {
+          currentIndex = data.savedIndex;
+        } else {
+          currentIndex = 0;
+        }
+
+        render();
+        cardText.innerHTML = "<span class='info-msg'>保存データを復元しました</span><br>▼ タップして再開";
+        isFront = true;
+      }
+    } catch(e) {}
+  }
+
+  function clearData() {
+    if(!confirm("保存データを削除して初期化しますか？")) return;
+    localStorage.removeItem(STORAGE_KEY);
+    location.reload();
+  }
+
+  // --- ファイル読込 ---
   fileInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    // 読み込み中表示
     cardText.innerHTML = "<span class='loading-msg'>ファイルを解析中...</span>";
     sideLabel.style.display = 'none';
 
@@ -229,7 +345,7 @@
       const text = await file.text();
       parseText(text);
     } catch (err) {
-      showError("ファイルの読み込みに失敗しました。<br>文字コードや形式を確認してください。");
+      showError("ファイルの読み込みに失敗しました。");
     }
     fileInput.value = '';
   });
@@ -237,54 +353,45 @@
   function showError(msg) {
     cardText.innerHTML = `<div class='error-msg'>⚠️ エラー<br>${msg}</div>`;
     sideLabel.style.display = 'none';
+    btnJump.style.display = 'none';
   }
 
   function parseText(text) {
     const lines = text.split(/\r?\n/).filter(line => line.trim() !== "");
-    
-    // 区切り文字の自動判定（より詳細に）
     let separator = ',';
-    if (lines[0] && lines[0].includes('\t')) {
-        separator = '\t';
-    }
+    if (lines[0] && lines[0].includes('\t')) separator = '\t';
 
     rawDeck = [];
     lines.forEach((line, idx) => {
-      // 意図的にカンマやタブで区切れるかチェック
       const parts = line.split(separator);
       if (parts.length >= 2) {
         rawDeck.push({ 
           id: idx,
           front: parts[0].trim(), 
-          back: parts.slice(1).join(separator).trim() // 2つ目以降に区切り文字があっても裏面として結合
+          back: parts.slice(1).join(separator).trim() 
         });
       }
     });
 
     if (rawDeck.length === 0) {
-      showError(
-        `カードが見つかりませんでした。<br><br>` +
-        `読み込んだ行数: ${lines.length}行<br>` +
-        `区切り文字: ${separator === '\t' ? 'タブ' : 'カンマ(,)'}<br><br>` +
-        `【対策】<br>1行に「表」と「裏」が区切り文字で書かれているか確認してください。<br>` +
-        `例: Apple,りんご`
-      );
+      showError("有効なカードが見つかりませんでした。");
       return;
     }
 
-    fullReset();
+    fullReset(); 
   }
 
   function fullReset() {
     if(rawDeck.length === 0) return;
     activeDeck = [...rawDeck];
+    currentIndex = 0;
     startRound();
+    saveToStorage();
   }
 
   function startRound() {
     currentSession = [...activeDeck];
     if (chkShuffle.checked) shuffleArray(currentSession);
-    currentIndex = 0;
     isFront = true;
     render();
   }
@@ -296,15 +403,70 @@
     }
   }
 
+  // --- 操作ロジック ---
+
   function markAsKnown(e) {
     if(e) e.stopPropagation();
     if (currentSession.length === 0 || currentIndex >= currentSession.length) return;
     const currentCard = currentSession[currentIndex];
+    
     activeDeck = activeDeck.filter(c => c.id !== currentCard.id);
+    saveToStorage();
     stepNext();
   }
 
+  // スキップ機能 (+10 / -10)
+  function skipIndex(direction) {
+    if(currentSession.length === 0) return;
+    
+    // 現在が完了画面の場合の処理
+    if(currentIndex >= currentSession.length) {
+      if(direction < 0) {
+        // 戻るボタン同様、最後のカードへ
+        currentIndex = currentSession.length - 1;
+      } else {
+        return; // これ以上先はない
+      }
+    } else {
+      // 通常ジャンプ
+      const move = direction * SKIP_STEP;
+      currentIndex += move;
+    }
+
+    // 範囲制限
+    if(currentIndex < 0) currentIndex = 0;
+    if(currentIndex >= currentSession.length) {
+      // 最後のカードで止める (完了画面にはしない)
+      currentIndex = currentSession.length - 1;
+    }
+
+    isFront = true; // ジャンプ後は表にする
+    render();
+    saveToStorage();
+  }
+
+  // No.指定ジャンプ
+  function jumpToCard(e) {
+    if(e) e.stopPropagation();
+    if(currentSession.length === 0) return;
+
+    const input = prompt(`No.を指定して移動 (1～${currentSession.length})`);
+    if(input === null) return;
+
+    const num = parseInt(input, 10);
+    if(isNaN(num) || num < 1 || num > currentSession.length) {
+      alert("番号が正しくありません");
+      return;
+    }
+
+    currentIndex = num - 1;
+    isFront = true;
+    render();
+    saveToStorage();
+  }
+
   function render() {
+    // ヘッダー情報
     if (rawDeck.length > 0) {
         lblRemaining.textContent = `あと ${activeDeck.length} 枚`;
         lblTotal.textContent = `全 ${rawDeck.length} 枚`;
@@ -313,8 +475,12 @@
         lblTotal.textContent = `全 -- 枚`;
     }
 
-    if (rawDeck.length === 0) return;
+    if (rawDeck.length === 0) {
+      btnJump.style.display = 'none';
+      return;
+    }
 
+    // 完了判定
     if (activeDeck.length === 0 && currentIndex >= currentSession.length) {
        showFinishScreen(true);
        return;
@@ -324,7 +490,14 @@
       return;
     }
 
+    // 通常表示
     btnKnown.style.visibility = 'visible';
+    btnJump.style.display = 'inline-block';
+    
+    // スキップボタン有効化
+    btnSkipPrev.disabled = false;
+    btnSkipNext.disabled = false;
+
     const card = currentSession[currentIndex];
     const textToShow = isFront ? card.front : card.back;
     
@@ -334,18 +507,19 @@
     sideLabel.style.background = isFront ? '#38bdf8' : '#f472b6';
     
     btnNext.textContent = isFront ? "答えを見る" : "次へ";
-    lblPosition.textContent = `この周: ${currentIndex + 1} / ${currentSession.length}`;
+    lblPosition.textContent = `${currentIndex + 1} / ${currentSession.length}`;
   }
 
   function showFinishScreen(isAllClear) {
     sideLabel.style.display = 'none';
     btnKnown.style.visibility = 'hidden';
-    lblPosition.textContent = ''; 
+    lblPosition.textContent = '- / -'; 
+    btnJump.style.display = 'none';
 
     if (isAllClear) {
       cardText.innerHTML = `
         <span class='finished-msg'>全カード制覇！<br>おめでとうございます🎉</span>
-        <span class='sub-msg'>「全リセット」で復習できます</span>
+        <span class='sub-msg'>「全リセット」または「保存削除」</span>
       `;
       btnNext.textContent = "全リセットして再開";
     } else {
@@ -363,13 +537,20 @@
     if(e) e.stopPropagation();
     if (rawDeck.length === 0) return;
     if (currentIndex >= currentSession.length) {
-      if (activeDeck.length === 0) fullReset();
-      else startRound();
+      if (activeDeck.length === 0) {
+        fullReset();
+      } else {
+        currentIndex = 0;
+        startRound();
+      }
+      saveToStorage();
       return;
     }
     if (isFront) isFront = false;
     else { isFront = true; currentIndex++; }
+    
     render();
+    saveToStorage();
   }
 
   function stepPrev(e) {
@@ -384,7 +565,9 @@
     if (currentIndex === 0 && isFront) return;
     if (!isFront) isFront = true;
     else { currentIndex--; isFront = false; }
+    
     render();
+    saveToStorage();
   }
 </script>
 
