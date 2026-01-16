@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Simple Flashcards v9 (Skip)</title>
+<title>Simple Flashcards v10 (PC & Mobile)</title>
 <style>
   :root {
     --bg: #0f172a;
@@ -59,6 +59,7 @@
     align-items: center;
     box-shadow: 0 2px 5px rgba(0,0,0,0.2);
   }
+  .btn-file:hover { opacity: 0.9; }
   
   .chk-label {
     display: flex;
@@ -121,6 +122,7 @@
   .error-msg { font-size: 16px; color: var(--error); text-align: left; }
   .loading-msg { font-size: 18px; color: var(--accent); }
   .info-msg { font-size: 16px; color: var(--accent); margin-bottom: 10px; display:block; }
+  .pc-hint { font-size: 12px; color: #64748b; margin-top: 10px; display: block; font-weight: normal; }
 
   .label {
     position: absolute;
@@ -135,7 +137,7 @@
     z-index: 10;
   }
   
-  /* フッター操作系（スキップボタン等） */
+  /* フッター操作系 */
   .footer-controls {
     display: flex;
     align-items: center;
@@ -149,7 +151,6 @@
     min-width: 80px;
     text-align: center;
   }
-  /* スキップボタン */
   .btn-skip {
     background: #334155;
     color: #94a3b8;
@@ -161,12 +162,12 @@
     cursor: pointer;
   }
   .btn-skip:active { background: #475569; color: #fff; }
+  .btn-skip:hover { background: #475569; color: #fff; }
 
-  /* ジャンプボタン（少し下に配置） */
   .jump-container {
     text-align: center;
     margin-top: 8px;
-    height: 24px; /* 高さ確保 */
+    height: 24px; 
   }
   .btn-jump {
     background: transparent;
@@ -176,6 +177,7 @@
     text-decoration: underline;
     cursor: pointer;
   }
+  .btn-jump:hover { color: #94a3b8; }
 
   .action-row {
     display: grid;
@@ -194,11 +196,11 @@
     color: #fff;
     padding: 0;
   }
-  .btn-main-btn { /* 共通クラス */ }
   .btn-prev { background: var(--btn-secondary); }
   .btn-next { background: var(--accent); color: #0f172a; font-size: 18px; }
   .btn-known { background: var(--success); color: #fff; }
   button:active { opacity: 0.8; transform: translateY(1px); }
+  button:hover { opacity: 0.9; } /* PC用ホバー */
 
   .finished-msg { color: #4ade80; font-size: 20px; line-height: 1.6; }
   .sub-msg { font-size: 14px; color: #cbd5e1; margin-top: 10px; display:block; }
@@ -228,6 +230,7 @@
     <div class="label" id="sideLabel" style="display:none">FRONT</div>
     <div class="card" id="cardText">
       上の「📂 ファイル選択」から<br>データを選んでください
+      <span class="pc-hint">※PCではキーボード操作も可能です<br>Space/→:次へ | ←:戻る | ↑:覚えた</span>
     </div>
   </div>
 
@@ -249,10 +252,10 @@
 </div>
 
 <script>
-  // ★ ここでスキップ枚数を設定できます ★
+  // ★設定: スキップ枚数
   const SKIP_STEP = 10; 
   
-  const STORAGE_KEY = 'fc_data_v9'; 
+  const STORAGE_KEY = 'fc_data_v10'; 
 
   let rawDeck = [];       
   let activeDeck = [];    
@@ -272,17 +275,34 @@
   const btnSkipPrev = document.getElementById('btnSkipPrev');
   const btnSkipNext = document.getElementById('btnSkipNext');
   const btnJump = document.getElementById('btnJump');
-
   const btnNext = document.getElementById('btnNext');
   const btnKnown = document.getElementById('btnKnown');
 
-  // 起動時設定
   window.addEventListener('DOMContentLoaded', () => {
-    // ボタンのラベルを設定値に合わせる
     btnSkipPrev.textContent = `-${SKIP_STEP}`;
     btnSkipNext.textContent = `+${SKIP_STEP}`;
-    
     loadFromStorage();
+  });
+
+  // ★ キーボード操作イベント追加 ★
+  document.addEventListener('keydown', (e) => {
+    if (rawDeck.length === 0) return; // データがない時は無視
+    
+    // スペース、エンター、右矢印 → 次へ
+    if (e.code === 'Space' || e.code === 'Enter' || e.code === 'ArrowRight') {
+      e.preventDefault(); // 画面スクロール等を防ぐ
+      stepNext();
+    }
+    // 左矢印 → 戻る
+    else if (e.code === 'ArrowLeft') {
+      e.preventDefault();
+      stepPrev();
+    }
+    // 上矢印 → 覚えた
+    else if (e.code === 'ArrowUp') {
+      e.preventDefault();
+      markAsKnown();
+    }
   });
 
   // --- 保存・復元 ---
@@ -307,8 +327,7 @@
         rawDeck = data.rawDeck;
         activeDeck = data.activeDeck || [...rawDeck];
         
-        // 復元UI準備
-        cardText.innerHTML = "<span class='info-msg'>保存データを復元しました</span><br>▼ タップして再開";
+        cardText.innerHTML = "<span class='info-msg'>保存データを復元しました</span><br>▼ タップまたはSpaceキーで再開";
         sideLabel.style.display = 'none';
         
         currentSession = [...activeDeck];
@@ -321,7 +340,7 @@
         }
 
         render();
-        cardText.innerHTML = "<span class='info-msg'>保存データを復元しました</span><br>▼ タップして再開";
+        cardText.innerHTML = "<span class='info-msg'>保存データを復元しました</span><br>▼ タップまたはSpaceキーで再開";
         isFront = true;
       }
     } catch(e) {}
@@ -415,37 +434,24 @@
     stepNext();
   }
 
-  // スキップ機能 (+10 / -10)
   function skipIndex(direction) {
     if(currentSession.length === 0) return;
     
-    // 現在が完了画面の場合の処理
     if(currentIndex >= currentSession.length) {
-      if(direction < 0) {
-        // 戻るボタン同様、最後のカードへ
-        currentIndex = currentSession.length - 1;
-      } else {
-        return; // これ以上先はない
-      }
+      if(direction < 0) currentIndex = currentSession.length - 1;
+      else return;
     } else {
-      // 通常ジャンプ
-      const move = direction * SKIP_STEP;
-      currentIndex += move;
+      currentIndex += direction * SKIP_STEP;
     }
 
-    // 範囲制限
     if(currentIndex < 0) currentIndex = 0;
-    if(currentIndex >= currentSession.length) {
-      // 最後のカードで止める (完了画面にはしない)
-      currentIndex = currentSession.length - 1;
-    }
+    if(currentIndex >= currentSession.length) currentIndex = currentSession.length - 1;
 
-    isFront = true; // ジャンプ後は表にする
+    isFront = true; 
     render();
     saveToStorage();
   }
 
-  // No.指定ジャンプ
   function jumpToCard(e) {
     if(e) e.stopPropagation();
     if(currentSession.length === 0) return;
@@ -466,7 +472,6 @@
   }
 
   function render() {
-    // ヘッダー情報
     if (rawDeck.length > 0) {
         lblRemaining.textContent = `あと ${activeDeck.length} 枚`;
         lblTotal.textContent = `全 ${rawDeck.length} 枚`;
@@ -480,7 +485,6 @@
       return;
     }
 
-    // 完了判定
     if (activeDeck.length === 0 && currentIndex >= currentSession.length) {
        showFinishScreen(true);
        return;
@@ -490,11 +494,9 @@
       return;
     }
 
-    // 通常表示
     btnKnown.style.visibility = 'visible';
     btnJump.style.display = 'inline-block';
     
-    // スキップボタン有効化
     btnSkipPrev.disabled = false;
     btnSkipNext.disabled = false;
 
