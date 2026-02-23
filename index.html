@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Simple Flashcards v10 (PC & Mobile)</title>
+<title>Simple Flashcards v11 (TTS)</title>
 <style>
   :root {
     --bg: #0f172a;
@@ -39,20 +39,19 @@
     margin-bottom: 12px;
     display: flex;
     flex-direction: row;
-    gap: 12px;
+    gap: 8px;
     align-items: center;
     justify-content: center;
     flex-wrap: wrap;
   }
 
-  /* ファイル入力 */
   input[type="file"] { display: none; }
   .btn-file {
     background: #0ea5e9;
     color: #fff;
-    padding: 10px 14px;
+    padding: 8px 12px;
     border-radius: 8px;
-    font-size: 14px;
+    font-size: 13px;
     cursor: pointer;
     font-weight: bold;
     display: inline-flex;
@@ -64,21 +63,22 @@
   .chk-label {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
     cursor: pointer;
     user-select: none;
     font-size: 13px;
     background: #1e293b;
-    padding: 8px 12px;
+    padding: 6px 10px;
     border-radius: 8px;
     border: 1px solid var(--border);
+    white-space: nowrap;
   }
-  input[type="checkbox"] { transform: scale(1.1); }
+  input[type="checkbox"] { transform: scale(1.1); margin: 0; }
 
   .btn-clear {
     background: #ef4444;
     font-size: 12px;
-    padding: 8px 12px;
+    padding: 8px 10px;
   }
 
   .stats-bar {
@@ -107,7 +107,7 @@
     border-radius: 16px;
     padding: 40px 20px;
     height: 100%;
-    max-height: 60vh;
+    max-height: 55vh;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -137,7 +137,6 @@
     z-index: 10;
   }
   
-  /* フッター操作系 */
   .footer-controls {
     display: flex;
     align-items: center;
@@ -200,7 +199,7 @@
   .btn-next { background: var(--accent); color: #0f172a; font-size: 18px; }
   .btn-known { background: var(--success); color: #fff; }
   button:active { opacity: 0.8; transform: translateY(1px); }
-  button:hover { opacity: 0.9; } /* PC用ホバー */
+  button:hover { opacity: 0.9; }
 
   .finished-msg { color: #4ade80; font-size: 20px; line-height: 1.6; }
   .sub-msg { font-size: 14px; color: #cbd5e1; margin-top: 10px; display:block; }
@@ -211,14 +210,13 @@
 <div class="container">
   <header>
     <label class="btn-file">
-      📂 ファイル選択
+      📂 ファイル
       <input type="file" id="fileInput">
     </label>
-    <label class="chk-label">
-      <input type="checkbox" id="chkShuffle">
-      シャッフル
-    </label>
-    <button class="btn-file btn-clear" onclick="clearData()">保存削除</button>
+    <label class="chk-label"><input type="checkbox" id="chkShuffle"> シャッフル</label>
+    <label class="chk-label"><input type="checkbox" id="chkSpeakFront"> 🔊表(英)</label>
+    <label class="chk-label"><input type="checkbox" id="chkSpeakBack"> 🔊裏(英)</label>
+    <button class="btn-file btn-clear" onclick="clearData()">初期化</button>
   </header>
 
   <div class="stats-bar">
@@ -229,7 +227,7 @@
   <div class="card-area" id="cardArea" onclick="stepNext()">
     <div class="label" id="sideLabel" style="display:none">FRONT</div>
     <div class="card" id="cardText">
-      上の「📂 ファイル選択」から<br>データを選んでください
+      上の「📂 ファイル」から<br>データを選んでください
       <span class="pc-hint">※PCではキーボード操作も可能です<br>Space/→:次へ | ←:戻る | ↑:覚えた</span>
     </div>
   </div>
@@ -252,10 +250,8 @@
 </div>
 
 <script>
-  // ★設定: スキップ枚数
   const SKIP_STEP = 10; 
-  
-  const STORAGE_KEY = 'fc_data_v10'; 
+  const STORAGE_KEY = 'fc_data_v11'; 
 
   let rawDeck = [];       
   let activeDeck = [];    
@@ -265,6 +261,8 @@
 
   const fileInput = document.getElementById('fileInput');
   const chkShuffle = document.getElementById('chkShuffle');
+  const chkSpeakFront = document.getElementById('chkSpeakFront');
+  const chkSpeakBack = document.getElementById('chkSpeakBack');
   const cardText = document.getElementById('cardText');
   const sideLabel = document.getElementById('sideLabel');
   
@@ -284,33 +282,47 @@
     loadFromStorage();
   });
 
-  // ★ キーボード操作イベント追加 ★
+  // 設定を変えたら保存する
+  chkShuffle.addEventListener('change', saveToStorage);
+  chkSpeakFront.addEventListener('change', saveToStorage);
+  chkSpeakBack.addEventListener('change', saveToStorage);
+
+  // キーボード操作
   document.addEventListener('keydown', (e) => {
-    if (rawDeck.length === 0) return; // データがない時は無視
-    
-    // スペース、エンター、右矢印 → 次へ
+    if (rawDeck.length === 0) return;
     if (e.code === 'Space' || e.code === 'Enter' || e.code === 'ArrowRight') {
-      e.preventDefault(); // 画面スクロール等を防ぐ
-      stepNext();
-    }
-    // 左矢印 → 戻る
-    else if (e.code === 'ArrowLeft') {
-      e.preventDefault();
-      stepPrev();
-    }
-    // 上矢印 → 覚えた
-    else if (e.code === 'ArrowUp') {
-      e.preventDefault();
-      markAsKnown();
+      e.preventDefault(); stepNext();
+    } else if (e.code === 'ArrowLeft') {
+      e.preventDefault(); stepPrev();
+    } else if (e.code === 'ArrowUp') {
+      e.preventDefault(); markAsKnown();
     }
   });
+
+  // ★ 英語読み上げ機能 ★
+  function speakEnglish(text) {
+    if (!('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel(); // 前の音声を止める
+    
+    // 改行記号をスペースに変換して、自然に読ませる
+    const cleanText = text.replace(/\\n/g, ' ').replace(/\n/g, ' ');
+    if (!cleanText.trim()) return;
+
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.lang = 'en-US'; // 英語に固定
+    window.speechSynthesis.speak(utterance);
+  }
 
   // --- 保存・復元 ---
   function saveToStorage() {
     const data = {
       rawDeck: rawDeck,
       activeDeck: activeDeck,
-      savedIndex: currentIndex 
+      savedIndex: currentIndex,
+      // チェックボックスの状態も保存
+      optShuffle: chkShuffle.checked,
+      optSpeakFront: chkSpeakFront.checked,
+      optSpeakBack: chkSpeakBack.checked
     };
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
@@ -323,12 +335,15 @@
       if (!json) return;
 
       const data = JSON.parse(json);
+      
+      // 設定の復元
+      if (data.optShuffle !== undefined) chkShuffle.checked = data.optShuffle;
+      if (data.optSpeakFront !== undefined) chkSpeakFront.checked = data.optSpeakFront;
+      if (data.optSpeakBack !== undefined) chkSpeakBack.checked = data.optSpeakBack;
+
       if (data.rawDeck && data.rawDeck.length > 0) {
         rawDeck = data.rawDeck;
         activeDeck = data.activeDeck || [...rawDeck];
-        
-        cardText.innerHTML = "<span class='info-msg'>保存データを復元しました</span><br>▼ タップまたはSpaceキーで再開";
-        sideLabel.style.display = 'none';
         
         currentSession = [...activeDeck];
         if (chkShuffle.checked) shuffleArray(currentSession);
@@ -339,7 +354,7 @@
           currentIndex = 0;
         }
 
-        render();
+        render(false); // 復元時は自動読み上げしない（ブラウザ制限回避のため）
         cardText.innerHTML = "<span class='info-msg'>保存データを復元しました</span><br>▼ タップまたはSpaceキーで再開";
         isFront = true;
       }
@@ -412,7 +427,7 @@
     currentSession = [...activeDeck];
     if (chkShuffle.checked) shuffleArray(currentSession);
     isFront = true;
-    render();
+    render(true); // 音声再生許可
   }
 
   function shuffleArray(arr) {
@@ -448,7 +463,7 @@
     if(currentIndex >= currentSession.length) currentIndex = currentSession.length - 1;
 
     isFront = true; 
-    render();
+    render(true);
     saveToStorage();
   }
 
@@ -467,11 +482,12 @@
 
     currentIndex = num - 1;
     isFront = true;
-    render();
+    render(true);
     saveToStorage();
   }
 
-  function render() {
+  // playAudioフラグ: 初回ロード時などはブラウザの制限で音が出ないためfalseにする
+  function render(playAudio = true) {
     if (rawDeck.length > 0) {
         lblRemaining.textContent = `あと ${activeDeck.length} 枚`;
         lblTotal.textContent = `全 ${rawDeck.length} 枚`;
@@ -496,7 +512,6 @@
 
     btnKnown.style.visibility = 'visible';
     btnJump.style.display = 'inline-block';
-    
     btnSkipPrev.disabled = false;
     btnSkipNext.disabled = false;
 
@@ -510,6 +525,15 @@
     
     btnNext.textContent = isFront ? "答えを見る" : "次へ";
     lblPosition.textContent = `${currentIndex + 1} / ${currentSession.length}`;
+
+    // ★ 音声読み上げ判定 ★
+    if (playAudio) {
+      if (isFront && chkSpeakFront.checked) {
+        speakEnglish(card.front);
+      } else if (!isFront && chkSpeakBack.checked) {
+        speakEnglish(card.back);
+      }
+    }
   }
 
   function showFinishScreen(isAllClear) {
@@ -521,7 +545,7 @@
     if (isAllClear) {
       cardText.innerHTML = `
         <span class='finished-msg'>全カード制覇！<br>おめでとうございます🎉</span>
-        <span class='sub-msg'>「全リセット」または「保存削除」</span>
+        <span class='sub-msg'>「初期化」ボタンでリセットできます</span>
       `;
       btnNext.textContent = "全リセットして再開";
     } else {
@@ -551,7 +575,7 @@
     if (isFront) isFront = false;
     else { isFront = true; currentIndex++; }
     
-    render();
+    render(true);
     saveToStorage();
   }
 
@@ -561,14 +585,14 @@
     if (currentIndex >= currentSession.length) {
       currentIndex = currentSession.length - 1;
       isFront = false;
-      render();
+      render(true);
       return;
     }
     if (currentIndex === 0 && isFront) return;
     if (!isFront) isFront = true;
     else { currentIndex--; isFront = false; }
     
-    render();
+    render(true);
     saveToStorage();
   }
 </script>
