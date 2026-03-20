@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Simple Flashcards v11 (TTS)</title>
+<title>Simple Flashcards v12 (Multi-File Save)</title>
 <style>
   :root {
     --bg: #0f172a;
@@ -36,7 +36,7 @@
   }
   
   header {
-    margin-bottom: 12px;
+    margin-bottom: 8px;
     display: flex;
     flex-direction: row;
     gap: 8px;
@@ -79,6 +79,16 @@
     background: #ef4444;
     font-size: 12px;
     padding: 8px 10px;
+  }
+
+  /* 現在のファイル名表示 */
+  .file-name-display {
+    font-size: 14px;
+    color: var(--accent);
+    text-align: center;
+    margin-bottom: 8px;
+    font-weight: bold;
+    min-height: 20px;
   }
 
   .stats-bar {
@@ -214,10 +224,12 @@
       <input type="file" id="fileInput">
     </label>
     <label class="chk-label"><input type="checkbox" id="chkShuffle"> シャッフル</label>
-    <label class="chk-label"><input type="checkbox" id="chkSpeakFront"> 🔊表(英)</label>
-    <label class="chk-label"><input type="checkbox" id="chkSpeakBack"> 🔊裏(英)</label>
+    <label class="chk-label"><input type="checkbox" id="chkSpeakFront"> 🔊表</label>
+    <label class="chk-label"><input type="checkbox" id="chkSpeakBack"> 🔊裏</label>
     <button class="btn-file btn-clear" onclick="clearData()">初期化</button>
   </header>
+
+  <div class="file-name-display" id="fileNameDisplay"></div>
 
   <div class="stats-bar">
     <span class="stat-left" id="lblRemaining">あと -- 枚</span>
@@ -251,8 +263,12 @@
 
 <script>
   const SKIP_STEP = 10; 
-  const STORAGE_KEY = 'fc_data_v11'; 
+  
+  // ファイルごとに保存キーを分けるための接頭辞
+  const STORAGE_PREFIX = 'fc_deck_v12_'; 
+  const LAST_FILE_KEY = 'fc_last_file_v12';
 
+  let currentFileName = ""; // 今開いているファイル名
   let rawDeck = [];       
   let activeDeck = [];    
   let currentSession = []; 
@@ -260,6 +276,7 @@
   let isFront = true;      
 
   const fileInput = document.getElementById('fileInput');
+  const fileNameDisplay = document.getElementById('fileNameDisplay');
   const chkShuffle = document.getElementById('chkShuffle');
   const chkSpeakFront = document.getElementById('chkSpeakFront');
   const chkSpeakBack = document.getElementById('chkSpeakBack');
@@ -279,7 +296,17 @@
   window.addEventListener('DOMContentLoaded', () => {
     btnSkipPrev.textContent = `-${SKIP_STEP}`;
     btnSkipNext.textContent = `+${SKIP_STEP}`;
-    loadFromStorage();
+    
+    // 起動時は前回最後に開いていたファイルをロード
+    const lastFile = localStorage.getItem(LAST_FILE_KEY);
+    if (lastFile) {
+      currentFileName = lastFile;
+      const loaded = loadProgress(currentFileName, null);
+      if (!loaded) {
+         currentFileName = ""; // ロード失敗時はクリア
+      }
+    }
+    updateFileNameDisplay();
   });
 
   // 設定を変えたら保存する
@@ -299,44 +326,47 @@
     }
   });
 
-  // ★ 英語読み上げ機能 ★
   function speakEnglish(text) {
     if (!('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel(); // 前の音声を止める
-    
-    // 改行記号をスペースに変換して、自然に読ませる
+    window.speechSynthesis.cancel(); 
     const cleanText = text.replace(/\\n/g, ' ').replace(/\n/g, ' ');
     if (!cleanText.trim()) return;
 
     const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.lang = 'en-US'; // 英語に固定
+    utterance.lang = 'en-US'; 
     window.speechSynthesis.speak(utterance);
   }
 
   // --- 保存・復元 ---
   function saveToStorage() {
+    if (!currentFileName) return;
     const data = {
       rawDeck: rawDeck,
       activeDeck: activeDeck,
       savedIndex: currentIndex,
-      // チェックボックスの状態も保存
       optShuffle: chkShuffle.checked,
       optSpeakFront: chkSpeakFront.checked,
       optSpeakBack: chkSpeakBack.checked
     };
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      // ファイル名をキーに含めて保存
+      localStorage.setItem(STORAGE_PREFIX + currentFileName, JSON.stringify(data));
+      localStorage.setItem(LAST_FILE_KEY, currentFileName);
     } catch(e) {}
   }
 
-  function loadFromStorage() {
+  function loadProgress(fileName, newlyParsedDeck) {
     try {
-      const json = localStorage.getItem(STORAGE_KEY);
-      if (!json) return;
+      const json = localStorage.getItem(STORAGE_PREFIX + fileName);
+      if (!json) return false;
 
       const data = JSON.parse(json);
       
-      // 設定の復元
+      // テキストファイルの中身が修正された（カードの枚数が変わった）場合は安全のためリセット
+      if (newlyParsedDeck && data.rawDeck && newlyParsedDeck.length !== data.rawDeck.length) {
+        return false;
+      }
+
       if (data.optShuffle !== undefined) chkShuffle.checked = data.optShuffle;
       if (data.optSpeakFront !== undefined) chkSpeakFront.checked = data.optSpeakFront;
       if (data.optSpeakBack !== undefined) chkSpeakBack.checked = data.optSpeakBack;
@@ -354,23 +384,35 @@
           currentIndex = 0;
         }
 
-        render(false); // 復元時は自動読み上げしない（ブラウザ制限回避のため）
-        cardText.innerHTML = "<span class='info-msg'>保存データを復元しました</span><br>▼ タップまたはSpaceキーで再開";
+        render(false); 
+        cardText.innerHTML = `<span class='info-msg'>「${fileName}」の<br>進捗を復元しました</span><br>▼ タップして再開`;
         isFront = true;
+        return true;
       }
     } catch(e) {}
+    return false;
   }
 
   function clearData() {
-    if(!confirm("保存データを削除して初期化しますか？")) return;
-    localStorage.removeItem(STORAGE_KEY);
-    location.reload();
+    if(!currentFileName) return;
+    if(!confirm(`現在開いている「${currentFileName}」の進捗データを削除して初期化しますか？\n（他のファイルのデータは消えません）`)) return;
+    
+    // 現在のファイル名に関する保存データだけを削除
+    localStorage.removeItem(STORAGE_PREFIX + currentFileName);
+    fullReset(); // 画面を初期状態に戻す
+  }
+
+  function updateFileNameDisplay() {
+    fileNameDisplay.textContent = currentFileName ? `📂 ${currentFileName}` : "";
   }
 
   // --- ファイル読込 ---
   fileInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+
+    currentFileName = file.name; // ★ 選択されたファイル名を記憶
+    updateFileNameDisplay();
 
     cardText.innerHTML = "<span class='loading-msg'>ファイルを解析中...</span>";
     sideLabel.style.display = 'none';
@@ -395,11 +437,11 @@
     let separator = ',';
     if (lines[0] && lines[0].includes('\t')) separator = '\t';
 
-    rawDeck = [];
+    let tempDeck = [];
     lines.forEach((line, idx) => {
       const parts = line.split(separator);
       if (parts.length >= 2) {
-        rawDeck.push({ 
+        tempDeck.push({ 
           id: idx,
           front: parts[0].trim(), 
           back: parts.slice(1).join(separator).trim() 
@@ -407,12 +449,17 @@
       }
     });
 
-    if (rawDeck.length === 0) {
+    if (tempDeck.length === 0) {
       showError("有効なカードが見つかりませんでした。");
       return;
     }
 
-    fullReset(); 
+    // ★ 過去の進捗があればロード、なければリセットして新規スタート
+    const loaded = loadProgress(currentFileName, tempDeck);
+    if (!loaded) {
+      rawDeck = tempDeck;
+      fullReset(); 
+    }
   }
 
   function fullReset() {
@@ -427,7 +474,7 @@
     currentSession = [...activeDeck];
     if (chkShuffle.checked) shuffleArray(currentSession);
     isFront = true;
-    render(true); // 音声再生許可
+    render(true); 
   }
 
   function shuffleArray(arr) {
@@ -486,7 +533,6 @@
     saveToStorage();
   }
 
-  // playAudioフラグ: 初回ロード時などはブラウザの制限で音が出ないためfalseにする
   function render(playAudio = true) {
     if (rawDeck.length > 0) {
         lblRemaining.textContent = `あと ${activeDeck.length} 枚`;
@@ -526,7 +572,6 @@
     btnNext.textContent = isFront ? "答えを見る" : "次へ";
     lblPosition.textContent = `${currentIndex + 1} / ${currentSession.length}`;
 
-    // ★ 音声読み上げ判定 ★
     if (playAudio) {
       if (isFront && chkSpeakFront.checked) {
         speakEnglish(card.front);
