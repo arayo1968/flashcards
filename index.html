@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Simple Flashcards v12 (Multi-File Save)</title>
+<title>Simple Flashcards v13 (Perfect Save)</title>
 <style>
   :root {
     --bg: #0f172a;
@@ -81,7 +81,6 @@
     padding: 8px 10px;
   }
 
-  /* 現在のファイル名表示 */
   .file-name-display {
     font-size: 14px;
     color: var(--accent);
@@ -264,11 +263,10 @@
 <script>
   const SKIP_STEP = 10; 
   
-  // ファイルごとに保存キーを分けるための接頭辞
-  const STORAGE_PREFIX = 'fc_deck_v12_'; 
-  const LAST_FILE_KEY = 'fc_last_file_v12';
+  const STORAGE_PREFIX = 'fc_deck_v13_'; 
+  const LAST_FILE_KEY = 'fc_last_file_v13';
 
-  let currentFileName = ""; // 今開いているファイル名
+  let currentFileName = ""; 
   let rawDeck = [];       
   let activeDeck = [];    
   let currentSession = []; 
@@ -297,24 +295,21 @@
     btnSkipPrev.textContent = `-${SKIP_STEP}`;
     btnSkipNext.textContent = `+${SKIP_STEP}`;
     
-    // 起動時は前回最後に開いていたファイルをロード
     const lastFile = localStorage.getItem(LAST_FILE_KEY);
     if (lastFile) {
       currentFileName = lastFile;
       const loaded = loadProgress(currentFileName, null);
       if (!loaded) {
-         currentFileName = ""; // ロード失敗時はクリア
+         currentFileName = ""; 
       }
     }
     updateFileNameDisplay();
   });
 
-  // 設定を変えたら保存する
   chkShuffle.addEventListener('change', saveToStorage);
   chkSpeakFront.addEventListener('change', saveToStorage);
   chkSpeakBack.addEventListener('change', saveToStorage);
 
-  // キーボード操作
   document.addEventListener('keydown', (e) => {
     if (rawDeck.length === 0) return;
     if (e.code === 'Space' || e.code === 'Enter' || e.code === 'ArrowRight') {
@@ -343,13 +338,13 @@
     const data = {
       rawDeck: rawDeck,
       activeDeck: activeDeck,
+      currentSession: currentSession, // ★ シャッフルされた並び順をそのまま保存！
       savedIndex: currentIndex,
       optShuffle: chkShuffle.checked,
       optSpeakFront: chkSpeakFront.checked,
       optSpeakBack: chkSpeakBack.checked
     };
     try {
-      // ファイル名をキーに含めて保存
       localStorage.setItem(STORAGE_PREFIX + currentFileName, JSON.stringify(data));
       localStorage.setItem(LAST_FILE_KEY, currentFileName);
     } catch(e) {}
@@ -362,7 +357,6 @@
 
       const data = JSON.parse(json);
       
-      // テキストファイルの中身が修正された（カードの枚数が変わった）場合は安全のためリセット
       if (newlyParsedDeck && data.rawDeck && newlyParsedDeck.length !== data.rawDeck.length) {
         return false;
       }
@@ -375,8 +369,13 @@
         rawDeck = data.rawDeck;
         activeDeck = data.activeDeck || [...rawDeck];
         
-        currentSession = [...activeDeck];
-        if (chkShuffle.checked) shuffleArray(currentSession);
+        // ★ 保存された並び順があればそれを復元、なければ作り直す
+        if (data.currentSession && data.currentSession.length > 0) {
+          currentSession = data.currentSession;
+        } else {
+          currentSession = [...activeDeck];
+          if (chkShuffle.checked) shuffleArray(currentSession);
+        }
 
         if (typeof data.savedIndex === 'number' && data.savedIndex < currentSession.length) {
           currentIndex = data.savedIndex;
@@ -385,7 +384,7 @@
         }
 
         render(false); 
-        cardText.innerHTML = `<span class='info-msg'>「${fileName}」の<br>進捗を復元しました</span><br>▼ タップして再開`;
+        cardText.innerHTML = `<span class='info-msg'>「${fileName}」の<br>進捗と順番を復元しました</span><br>▼ タップして再開`;
         isFront = true;
         return true;
       }
@@ -397,9 +396,8 @@
     if(!currentFileName) return;
     if(!confirm(`現在開いている「${currentFileName}」の進捗データを削除して初期化しますか？\n（他のファイルのデータは消えません）`)) return;
     
-    // 現在のファイル名に関する保存データだけを削除
     localStorage.removeItem(STORAGE_PREFIX + currentFileName);
-    fullReset(); // 画面を初期状態に戻す
+    fullReset(); 
   }
 
   function updateFileNameDisplay() {
@@ -411,7 +409,7 @@
     const file = e.target.files[0];
     if (!file) return;
 
-    currentFileName = file.name; // ★ 選択されたファイル名を記憶
+    currentFileName = file.name; 
     updateFileNameDisplay();
 
     cardText.innerHTML = "<span class='loading-msg'>ファイルを解析中...</span>";
@@ -454,7 +452,6 @@
       return;
     }
 
-    // ★ 過去の進捗があればロード、なければリセットして新規スタート
     const loaded = loadProgress(currentFileName, tempDeck);
     if (!loaded) {
       rawDeck = tempDeck;
