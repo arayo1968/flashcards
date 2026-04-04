@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Simple Flashcards v13 (Perfect Save)</title>
+<title>Simple Flashcards v14 (Star & Focus)</title>
 <style>
   :root {
     --bg: #0f172a;
@@ -12,6 +12,7 @@
     --accent: #38bdf8;
     --success: #22c55e;
     --error: #ef4444;
+    --star: #facc15;
     --border: #334155;
     --btn-secondary: #475569;
   }
@@ -98,7 +99,7 @@
     margin-bottom: 8px;
     padding: 0 4px;
   }
-  .stat-left { color: #facc15; font-weight: bold; }
+  .stat-left { color: var(--star); font-weight: bold; }
   .stat-right { color: #94a3b8; }
 
   .card-area {
@@ -127,6 +128,23 @@
     white-space: pre-wrap;
     overflow-y: auto;
   }
+
+  /* ★ お気に入りボタン */
+  .star-btn {
+    position: absolute;
+    top: -12px;
+    right: 15px;
+    background: transparent;
+    border: none;
+    font-size: 32px;
+    cursor: pointer;
+    z-index: 20;
+    padding: 0;
+    user-select: none;
+    color: #64748b; /* デフォルトの灰色の星 */
+  }
+  .star-btn.active { color: var(--star); } /* アクティブ時は黄色 */
+  .star-btn:active { transform: scale(1.2); }
   
   .error-msg { font-size: 16px; color: var(--error); text-align: left; }
   .loading-msg { font-size: 18px; color: var(--accent); }
@@ -222,9 +240,10 @@
       📂 ファイル
       <input type="file" id="fileInput">
     </label>
-    <label class="chk-label"><input type="checkbox" id="chkShuffle"> シャッフル</label>
+    <label class="chk-label"><input type="checkbox" id="chkShuffle"> 🔀</label>
     <label class="chk-label"><input type="checkbox" id="chkSpeakFront"> 🔊表</label>
     <label class="chk-label"><input type="checkbox" id="chkSpeakBack"> 🔊裏</label>
+    <label class="chk-label" style="border-color:var(--star);"><input type="checkbox" id="chkStarOnly"> ★のみ</label>
     <button class="btn-file btn-clear" onclick="clearData()">初期化</button>
   </header>
 
@@ -237,9 +256,10 @@
 
   <div class="card-area" id="cardArea" onclick="stepNext()">
     <div class="label" id="sideLabel" style="display:none">FRONT</div>
+    <button class="star-btn" id="btnStar" onclick="toggleStar(event)" style="display:none;">☆</button>
     <div class="card" id="cardText">
       上の「📂 ファイル」から<br>データを選んでください
-      <span class="pc-hint">※PCではキーボード操作も可能です<br>Space/→:次へ | ←:戻る | ↑:覚えた</span>
+      <span class="pc-hint">※PC操作：Space/→:次へ | ←:戻る | ↑:覚えた | S:★</span>
     </div>
   </div>
 
@@ -262,9 +282,8 @@
 
 <script>
   const SKIP_STEP = 10; 
-  
-  const STORAGE_PREFIX = 'fc_deck_v13_'; 
-  const LAST_FILE_KEY = 'fc_last_file_v13';
+  const STORAGE_PREFIX = 'fc_deck_v14_'; 
+  const LAST_FILE_KEY = 'fc_last_file_v14';
 
   let currentFileName = ""; 
   let rawDeck = [];       
@@ -272,14 +291,19 @@
   let currentSession = []; 
   let currentIndex = 0;    
   let isFront = true;      
+  
+  let starredIds = new Set(); // ★をつけたカードのIDを保存
 
   const fileInput = document.getElementById('fileInput');
   const fileNameDisplay = document.getElementById('fileNameDisplay');
   const chkShuffle = document.getElementById('chkShuffle');
   const chkSpeakFront = document.getElementById('chkSpeakFront');
   const chkSpeakBack = document.getElementById('chkSpeakBack');
+  const chkStarOnly = document.getElementById('chkStarOnly');
+  
   const cardText = document.getElementById('cardText');
   const sideLabel = document.getElementById('sideLabel');
+  const btnStar = document.getElementById('btnStar');
   
   const lblRemaining = document.getElementById('lblRemaining');
   const lblTotal = document.getElementById('lblTotal');
@@ -310,6 +334,12 @@
   chkSpeakFront.addEventListener('change', saveToStorage);
   chkSpeakBack.addEventListener('change', saveToStorage);
 
+  // 「★のみ」を切り替えたら即座にラウンドを作り直す
+  chkStarOnly.addEventListener('change', () => {
+    saveToStorage();
+    if(rawDeck.length > 0) startRound();
+  });
+
   document.addEventListener('keydown', (e) => {
     if (rawDeck.length === 0) return;
     if (e.code === 'Space' || e.code === 'Enter' || e.code === 'ArrowRight') {
@@ -318,6 +348,8 @@
       e.preventDefault(); stepPrev();
     } else if (e.code === 'ArrowUp') {
       e.preventDefault(); markAsKnown();
+    } else if (e.code === 'KeyS') {
+      e.preventDefault(); toggleStar();
     }
   });
 
@@ -338,11 +370,13 @@
     const data = {
       rawDeck: rawDeck,
       activeDeck: activeDeck,
-      currentSession: currentSession, // ★ シャッフルされた並び順をそのまま保存！
+      currentSession: currentSession,
       savedIndex: currentIndex,
+      starredIds: Array.from(starredIds), // ★の記録を保存
       optShuffle: chkShuffle.checked,
       optSpeakFront: chkSpeakFront.checked,
-      optSpeakBack: chkSpeakBack.checked
+      optSpeakBack: chkSpeakBack.checked,
+      optStarOnly: chkStarOnly.checked
     };
     try {
       localStorage.setItem(STORAGE_PREFIX + currentFileName, JSON.stringify(data));
@@ -364,17 +398,19 @@
       if (data.optShuffle !== undefined) chkShuffle.checked = data.optShuffle;
       if (data.optSpeakFront !== undefined) chkSpeakFront.checked = data.optSpeakFront;
       if (data.optSpeakBack !== undefined) chkSpeakBack.checked = data.optSpeakBack;
+      if (data.optStarOnly !== undefined) chkStarOnly.checked = data.optStarOnly;
+      
+      if (data.starredIds) starredIds = new Set(data.starredIds);
 
       if (data.rawDeck && data.rawDeck.length > 0) {
         rawDeck = data.rawDeck;
         activeDeck = data.activeDeck || [...rawDeck];
         
-        // ★ 保存された並び順があればそれを復元、なければ作り直す
         if (data.currentSession && data.currentSession.length > 0) {
           currentSession = data.currentSession;
         } else {
-          currentSession = [...activeDeck];
-          if (chkShuffle.checked) shuffleArray(currentSession);
+          startRound(); // 内部で currentSession を構築する
+          return true;  // renderはstartRound内で呼ばれる
         }
 
         if (typeof data.savedIndex === 'number' && data.savedIndex < currentSession.length) {
@@ -394,9 +430,11 @@
 
   function clearData() {
     if(!currentFileName) return;
-    if(!confirm(`現在開いている「${currentFileName}」の進捗データを削除して初期化しますか？\n（他のファイルのデータは消えません）`)) return;
+    if(!confirm(`現在開いている「${currentFileName}」の進捗データ（覚えた記録、★など）を全て削除して初期化しますか？`)) return;
     
     localStorage.removeItem(STORAGE_PREFIX + currentFileName);
+    starredIds.clear();
+    chkStarOnly.checked = false;
     fullReset(); 
   }
 
@@ -428,6 +466,7 @@
     cardText.innerHTML = `<div class='error-msg'>⚠️ エラー<br>${msg}</div>`;
     sideLabel.style.display = 'none';
     btnJump.style.display = 'none';
+    btnStar.style.display = 'none';
   }
 
   function parseText(text) {
@@ -455,6 +494,8 @@
     const loaded = loadProgress(currentFileName, tempDeck);
     if (!loaded) {
       rawDeck = tempDeck;
+      starredIds.clear();
+      chkStarOnly.checked = false;
       fullReset(); 
     }
   }
@@ -468,9 +509,17 @@
   }
 
   function startRound() {
-    currentSession = [...activeDeck];
+    // 「★のみ」チェックがある場合は、activeDeckの中から★がついているものだけを抽出
+    if (chkStarOnly.checked) {
+      currentSession = activeDeck.filter(c => starredIds.has(c.id));
+    } else {
+      currentSession = [...activeDeck];
+    }
+    
     if (chkShuffle.checked) shuffleArray(currentSession);
+    
     isFront = true;
+    currentIndex = 0;
     render(true); 
   }
 
@@ -482,6 +531,22 @@
   }
 
   // --- 操作ロジック ---
+
+  // ★をつける・外す
+  function toggleStar(e) {
+    if(e) e.stopPropagation();
+    if (currentSession.length === 0 || currentIndex >= currentSession.length) return;
+    
+    const currentCard = currentSession[currentIndex];
+    if (starredIds.has(currentCard.id)) {
+      starredIds.delete(currentCard.id);
+    } else {
+      starredIds.add(currentCard.id);
+    }
+    
+    saveToStorage();
+    render(false); // 音声は出さずにUIだけ更新
+  }
 
   function markAsKnown(e) {
     if(e) e.stopPropagation();
@@ -531,8 +596,14 @@
   }
 
   function render(playAudio = true) {
+    // ヘッダー情報
     if (rawDeck.length > 0) {
-        lblRemaining.textContent = `あと ${activeDeck.length} 枚`;
+        if (chkStarOnly.checked) {
+          const starRemaining = activeDeck.filter(c => starredIds.has(c.id)).length;
+          lblRemaining.textContent = `あと ${starRemaining} 枚 (★)`;
+        } else {
+          lblRemaining.textContent = `あと ${activeDeck.length} 枚`;
+        }
         lblTotal.textContent = `全 ${rawDeck.length} 枚`;
     } else {
         lblRemaining.textContent = `あと -- 枚`;
@@ -541,25 +612,44 @@
 
     if (rawDeck.length === 0) {
       btnJump.style.display = 'none';
+      btnStar.style.display = 'none';
       return;
     }
 
-    if (activeDeck.length === 0 && currentIndex >= currentSession.length) {
-       showFinishScreen(true);
-       return;
+    // 「★のみ」で対象カードが1枚もない場合
+    if (currentSession.length === 0) {
+      if (chkStarOnly.checked && activeDeck.length > 0) {
+        showFinishScreen(true, true); // ★完了
+      } else {
+        showFinishScreen(true, false); // 全完了
+      }
+      return;
     }
+
+    // 周回完了
     if (currentIndex >= currentSession.length) {
-      showFinishScreen(false);
+      showFinishScreen(false, false);
       return;
     }
 
+    // 通常表示
     btnKnown.style.visibility = 'visible';
     btnJump.style.display = 'inline-block';
+    btnStar.style.display = 'block';
     btnSkipPrev.disabled = false;
     btnSkipNext.disabled = false;
 
     const card = currentSession[currentIndex];
     const textToShow = isFront ? card.front : card.back;
+    
+    // ★ボタンの表示状態を更新
+    if (starredIds.has(card.id)) {
+      btnStar.textContent = '★';
+      btnStar.className = 'star-btn active';
+    } else {
+      btnStar.textContent = '☆';
+      btnStar.className = 'star-btn';
+    }
     
     cardText.textContent = textToShow.replace(/\\n/g, '\n');
     sideLabel.style.display = 'block';
@@ -578,23 +668,34 @@
     }
   }
 
-  function showFinishScreen(isAllClear) {
+  function showFinishScreen(isAllClear, isStarMode) {
     sideLabel.style.display = 'none';
     btnKnown.style.visibility = 'hidden';
     lblPosition.textContent = '- / -'; 
     btnJump.style.display = 'none';
+    btnStar.style.display = 'none';
+    btnSkipPrev.disabled = true;
+    btnSkipNext.disabled = true;
 
     if (isAllClear) {
-      cardText.innerHTML = `
-        <span class='finished-msg'>全カード制覇！<br>おめでとうございます🎉</span>
-        <span class='sub-msg'>「初期化」ボタンでリセットできます</span>
-      `;
-      btnNext.textContent = "全リセットして再開";
+      if (isStarMode) {
+        cardText.innerHTML = `
+          <span class='finished-msg'>★カード完了！🎉</span>
+          <span class='sub-msg'>まだ覚えていない★カードはありません。<br>「★のみ」のチェックを外してください。</span>
+        `;
+        btnNext.textContent = "チェックを外す";
+      } else {
+        cardText.innerHTML = `
+          <span class='finished-msg'>全カード制覇！<br>おめでとうございます🎉</span>
+          <span class='sub-msg'>「初期化」ボタンでリセットできます</span>
+        `;
+        btnNext.textContent = "全リセットして再開";
+      }
     } else {
       cardText.innerHTML = `
         <span class='finished-msg'>この周は終了！</span>
         <span class='sub-msg'>
-          次は、残りの <b>${activeDeck.length}枚</b> で<br>スタートします
+          次は、残りの <b>${currentSession.length}枚</b> で<br>スタートします
         </span>
       `;
       btnNext.textContent = "次の周をスタート";
@@ -604,9 +705,22 @@
   function stepNext(e) {
     if(e) e.stopPropagation();
     if (rawDeck.length === 0) return;
+    
+    // 現在のモードでの残り枚数
+    let remaining = chkStarOnly.checked 
+        ? activeDeck.filter(c => starredIds.has(c.id)).length 
+        : activeDeck.length;
+
     if (currentIndex >= currentSession.length) {
-      if (activeDeck.length === 0) {
-        fullReset();
+      if (remaining === 0) {
+        if (chkStarOnly.checked) {
+          // ★モード制覇時は自動でチェックを外して通常モードに戻る
+          chkStarOnly.checked = false;
+          saveToStorage();
+          startRound();
+        } else {
+          fullReset();
+        }
       } else {
         currentIndex = 0;
         startRound();
@@ -614,6 +728,7 @@
       saveToStorage();
       return;
     }
+    
     if (isFront) isFront = false;
     else { isFront = true; currentIndex++; }
     
