@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Simple Flashcards v15 (Excel Fix)</title>
+<title>Simple Flashcards v16 (Perfect Excel Reader)</title>
 <style>
   :root {
     --bg: #0f172a;
@@ -281,8 +281,8 @@
 
 <script>
   const SKIP_STEP = 10; 
-  const STORAGE_PREFIX = 'fc_deck_v15_'; 
-  const LAST_FILE_KEY = 'fc_last_file_v15';
+  const STORAGE_PREFIX = 'fc_deck_v16_'; 
+  const LAST_FILE_KEY = 'fc_last_file_v16';
 
   let currentFileName = ""; 
   let rawDeck = [];       
@@ -354,8 +354,8 @@
   function speakEnglish(text) {
     if (!('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel(); 
-    // 音声読み上げ時には \n や ¥n をスペースとして扱う
-    const cleanText = text.replace(/\\[nN]/g, ' ').replace(/¥[nN]/g, ' ').replace(/\n/g, ' ');
+    // ★ 音声読み上げ時に /n も空白として処理する
+    const cleanText = text.replace(/\\[nN]/g, ' ').replace(/¥[nN]/g, ' ').replace(/\/[nN]/g, ' ').replace(/\n/g, ' ');
     if (!cleanText.trim()) return;
 
     const utterance = new SpeechSynthesisUtterance(cleanText);
@@ -440,13 +440,38 @@
     fileNameDisplay.textContent = currentFileName ? `📂 ${currentFileName}` : "";
   }
 
-  // ★ 追加：Excel特有のおせっかいな「" "」を取り除く関数
-  function cleanExcelQuotes(str) {
-    if (str.startsWith('"') && str.endsWith('"')) {
-      // 両端の " を消して、中の "" を " に戻す
-      return str.slice(1, -1).replace(/""/g, '"');
+  // ★ 追加：ExcelのCSVを完璧に読み解く専用の処理
+  function parseCSVLine(line, separator) {
+    if (separator === '\t') return line.split('\t'); // タブ区切りならそのまま
+    let result = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      let char = line[i];
+      if (inQuotes) {
+        if (char === '"') {
+          if (i + 1 < line.length && line[i + 1] === '"') {
+            current += '"'; // エスケープされたダブルクォート
+            i++;
+          } else {
+            inQuotes = false; // 引用終了
+          }
+        } else {
+          current += char;
+        }
+      } else {
+        if (char === '"') {
+          inQuotes = true; // 引用開始
+        } else if (char === separator) {
+          result.push(current);
+          current = '';
+        } else {
+          current += char;
+        }
+      }
     }
-    return str;
+    result.push(current);
+    return result;
   }
 
   fileInput.addEventListener('change', async (e) => {
@@ -482,19 +507,13 @@
 
     let tempDeck = [];
     lines.forEach((line, idx) => {
-      const parts = line.split(separator);
+      // ★ Excelのカンマ対応完璧版パーサーを使用
+      const parts = parseCSVLine(line, separator);
       if (parts.length >= 2) {
-        // 分割したあとに Excelの不要なダブルクォーテーションを掃除する
-        let frontStr = parts[0].trim();
-        let backStr = parts.slice(1).join(separator).trim();
-        
-        frontStr = cleanExcelQuotes(frontStr);
-        backStr = cleanExcelQuotes(backStr);
-
         tempDeck.push({ 
           id: idx,
-          front: frontStr, 
-          back: backStr
+          front: parts[0].trim(), 
+          back: parts.slice(1).join('\n').trim() // 3列以上あった場合は改行して裏面に統合
         });
       }
     });
@@ -655,8 +674,8 @@
       btnStar.className = 'star-btn';
     }
     
-    // ★ 追加： \n だけでなく ¥n も確実に改行として処理する
-    cardText.textContent = textToShow.replace(/\\[nN]/g, '\n').replace(/¥[nN]/g, '\n');
+    // ★ 完璧な改行処理： \n も ¥n も /n も全て改行に変換！
+    cardText.textContent = textToShow.replace(/\\[nN]/g, '\n').replace(/¥[nN]/g, '\n').replace(/\/[nN]/g, '\n');
     
     sideLabel.style.display = 'block';
     sideLabel.textContent = isFront ? '表 (FRONT)' : '裏 (BACK)';
