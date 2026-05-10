@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Simple Flashcards v14 (Star & Focus)</title>
+<title>Simple Flashcards v15 (Excel Fix)</title>
 <style>
   :root {
     --bg: #0f172a;
@@ -129,7 +129,6 @@
     overflow-y: auto;
   }
 
-  /* ★ お気に入りボタン */
   .star-btn {
     position: absolute;
     top: -12px;
@@ -141,9 +140,9 @@
     z-index: 20;
     padding: 0;
     user-select: none;
-    color: #64748b; /* デフォルトの灰色の星 */
+    color: #64748b; 
   }
-  .star-btn.active { color: var(--star); } /* アクティブ時は黄色 */
+  .star-btn.active { color: var(--star); } 
   .star-btn:active { transform: scale(1.2); }
   
   .error-msg { font-size: 16px; color: var(--error); text-align: left; }
@@ -282,8 +281,8 @@
 
 <script>
   const SKIP_STEP = 10; 
-  const STORAGE_PREFIX = 'fc_deck_v14_'; 
-  const LAST_FILE_KEY = 'fc_last_file_v14';
+  const STORAGE_PREFIX = 'fc_deck_v15_'; 
+  const LAST_FILE_KEY = 'fc_last_file_v15';
 
   let currentFileName = ""; 
   let rawDeck = [];       
@@ -292,7 +291,7 @@
   let currentIndex = 0;    
   let isFront = true;      
   
-  let starredIds = new Set(); // ★をつけたカードのIDを保存
+  let starredIds = new Set(); 
 
   const fileInput = document.getElementById('fileInput');
   const fileNameDisplay = document.getElementById('fileNameDisplay');
@@ -334,7 +333,6 @@
   chkSpeakFront.addEventListener('change', saveToStorage);
   chkSpeakBack.addEventListener('change', saveToStorage);
 
-  // 「★のみ」を切り替えたら即座にラウンドを作り直す
   chkStarOnly.addEventListener('change', () => {
     saveToStorage();
     if(rawDeck.length > 0) startRound();
@@ -356,7 +354,8 @@
   function speakEnglish(text) {
     if (!('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel(); 
-    const cleanText = text.replace(/\\n/g, ' ').replace(/\n/g, ' ');
+    // 音声読み上げ時には \n や ¥n をスペースとして扱う
+    const cleanText = text.replace(/\\[nN]/g, ' ').replace(/¥[nN]/g, ' ').replace(/\n/g, ' ');
     if (!cleanText.trim()) return;
 
     const utterance = new SpeechSynthesisUtterance(cleanText);
@@ -364,7 +363,6 @@
     window.speechSynthesis.speak(utterance);
   }
 
-  // --- 保存・復元 ---
   function saveToStorage() {
     if (!currentFileName) return;
     const data = {
@@ -372,7 +370,7 @@
       activeDeck: activeDeck,
       currentSession: currentSession,
       savedIndex: currentIndex,
-      starredIds: Array.from(starredIds), // ★の記録を保存
+      starredIds: Array.from(starredIds), 
       optShuffle: chkShuffle.checked,
       optSpeakFront: chkSpeakFront.checked,
       optSpeakBack: chkSpeakBack.checked,
@@ -409,8 +407,8 @@
         if (data.currentSession && data.currentSession.length > 0) {
           currentSession = data.currentSession;
         } else {
-          startRound(); // 内部で currentSession を構築する
-          return true;  // renderはstartRound内で呼ばれる
+          startRound(); 
+          return true;  
         }
 
         if (typeof data.savedIndex === 'number' && data.savedIndex < currentSession.length) {
@@ -442,7 +440,15 @@
     fileNameDisplay.textContent = currentFileName ? `📂 ${currentFileName}` : "";
   }
 
-  // --- ファイル読込 ---
+  // ★ 追加：Excel特有のおせっかいな「" "」を取り除く関数
+  function cleanExcelQuotes(str) {
+    if (str.startsWith('"') && str.endsWith('"')) {
+      // 両端の " を消して、中の "" を " に戻す
+      return str.slice(1, -1).replace(/""/g, '"');
+    }
+    return str;
+  }
+
   fileInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -478,10 +484,17 @@
     lines.forEach((line, idx) => {
       const parts = line.split(separator);
       if (parts.length >= 2) {
+        // 分割したあとに Excelの不要なダブルクォーテーションを掃除する
+        let frontStr = parts[0].trim();
+        let backStr = parts.slice(1).join(separator).trim();
+        
+        frontStr = cleanExcelQuotes(frontStr);
+        backStr = cleanExcelQuotes(backStr);
+
         tempDeck.push({ 
           id: idx,
-          front: parts[0].trim(), 
-          back: parts.slice(1).join(separator).trim() 
+          front: frontStr, 
+          back: backStr
         });
       }
     });
@@ -509,7 +522,6 @@
   }
 
   function startRound() {
-    // 「★のみ」チェックがある場合は、activeDeckの中から★がついているものだけを抽出
     if (chkStarOnly.checked) {
       currentSession = activeDeck.filter(c => starredIds.has(c.id));
     } else {
@@ -530,9 +542,6 @@
     }
   }
 
-  // --- 操作ロジック ---
-
-  // ★をつける・外す
   function toggleStar(e) {
     if(e) e.stopPropagation();
     if (currentSession.length === 0 || currentIndex >= currentSession.length) return;
@@ -545,7 +554,7 @@
     }
     
     saveToStorage();
-    render(false); // 音声は出さずにUIだけ更新
+    render(false); 
   }
 
   function markAsKnown(e) {
@@ -596,7 +605,6 @@
   }
 
   function render(playAudio = true) {
-    // ヘッダー情報
     if (rawDeck.length > 0) {
         if (chkStarOnly.checked) {
           const starRemaining = activeDeck.filter(c => starredIds.has(c.id)).length;
@@ -616,23 +624,20 @@
       return;
     }
 
-    // 「★のみ」で対象カードが1枚もない場合
     if (currentSession.length === 0) {
       if (chkStarOnly.checked && activeDeck.length > 0) {
-        showFinishScreen(true, true); // ★完了
+        showFinishScreen(true, true); 
       } else {
-        showFinishScreen(true, false); // 全完了
+        showFinishScreen(true, false); 
       }
       return;
     }
 
-    // 周回完了
     if (currentIndex >= currentSession.length) {
       showFinishScreen(false, false);
       return;
     }
 
-    // 通常表示
     btnKnown.style.visibility = 'visible';
     btnJump.style.display = 'inline-block';
     btnStar.style.display = 'block';
@@ -642,7 +647,6 @@
     const card = currentSession[currentIndex];
     const textToShow = isFront ? card.front : card.back;
     
-    // ★ボタンの表示状態を更新
     if (starredIds.has(card.id)) {
       btnStar.textContent = '★';
       btnStar.className = 'star-btn active';
@@ -651,7 +655,9 @@
       btnStar.className = 'star-btn';
     }
     
-    cardText.textContent = textToShow.replace(/\\n/g, '\n');
+    // ★ 追加： \n だけでなく ¥n も確実に改行として処理する
+    cardText.textContent = textToShow.replace(/\\[nN]/g, '\n').replace(/¥[nN]/g, '\n');
+    
     sideLabel.style.display = 'block';
     sideLabel.textContent = isFront ? '表 (FRONT)' : '裏 (BACK)';
     sideLabel.style.background = isFront ? '#38bdf8' : '#f472b6';
@@ -706,7 +712,6 @@
     if(e) e.stopPropagation();
     if (rawDeck.length === 0) return;
     
-    // 現在のモードでの残り枚数
     let remaining = chkStarOnly.checked 
         ? activeDeck.filter(c => starredIds.has(c.id)).length 
         : activeDeck.length;
@@ -714,7 +719,6 @@
     if (currentIndex >= currentSession.length) {
       if (remaining === 0) {
         if (chkStarOnly.checked) {
-          // ★モード制覇時は自動でチェックを外して通常モードに戻る
           chkStarOnly.checked = false;
           saveToStorage();
           startRound();
