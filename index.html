@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Simple Flashcards v14 (Star & Focus)</title>
+<title>Simple Flashcards v14.2 (Smart Merge, No Excel Fix)</title>
 <style>
   :root {
     --bg: #0f172a;
@@ -129,7 +129,6 @@
     overflow-y: auto;
   }
 
-  /* ★ お気に入りボタン */
   .star-btn {
     position: absolute;
     top: -12px;
@@ -141,9 +140,9 @@
     z-index: 20;
     padding: 0;
     user-select: none;
-    color: #64748b; /* デフォルトの灰色の星 */
+    color: #64748b; 
   }
-  .star-btn.active { color: var(--star); } /* アクティブ時は黄色 */
+  .star-btn.active { color: var(--star); } 
   .star-btn:active { transform: scale(1.2); }
   
   .error-msg { font-size: 16px; color: var(--error); text-align: left; }
@@ -282,6 +281,7 @@
 
 <script>
   const SKIP_STEP = 10; 
+  // v14の保存キーをそのまま使用し、既存データを維持
   const STORAGE_PREFIX = 'fc_deck_v14_'; 
   const LAST_FILE_KEY = 'fc_last_file_v14';
 
@@ -292,7 +292,7 @@
   let currentIndex = 0;    
   let isFront = true;      
   
-  let starredIds = new Set(); // ★をつけたカードのIDを保存
+  let starredIds = new Set(); 
 
   const fileInput = document.getElementById('fileInput');
   const fileNameDisplay = document.getElementById('fileNameDisplay');
@@ -315,6 +315,18 @@
   const btnNext = document.getElementById('btnNext');
   const btnKnown = document.getElementById('btnKnown');
 
+  // デッキの中身が変更されたかチェックする関数
+  function isDeckChanged(oldDeck, newDeck) {
+      if (!oldDeck || !newDeck) return true;
+      if (oldDeck.length !== newDeck.length) return true;
+      for (let i = 0; i < oldDeck.length; i++) {
+          if (oldDeck[i].front !== newDeck[i].front || oldDeck[i].back !== newDeck[i].back) {
+              return true;
+          }
+      }
+      return false;
+  }
+
   window.addEventListener('DOMContentLoaded', () => {
     btnSkipPrev.textContent = `-${SKIP_STEP}`;
     btnSkipNext.textContent = `+${SKIP_STEP}`;
@@ -334,7 +346,6 @@
   chkSpeakFront.addEventListener('change', saveToStorage);
   chkSpeakBack.addEventListener('change', saveToStorage);
 
-  // 「★のみ」を切り替えたら即座にラウンドを作り直す
   chkStarOnly.addEventListener('change', () => {
     saveToStorage();
     if(rawDeck.length > 0) startRound();
@@ -364,7 +375,6 @@
     window.speechSynthesis.speak(utterance);
   }
 
-  // --- 保存・復元 ---
   function saveToStorage() {
     if (!currentFileName) return;
     const data = {
@@ -372,7 +382,7 @@
       activeDeck: activeDeck,
       currentSession: currentSession,
       savedIndex: currentIndex,
-      starredIds: Array.from(starredIds), // ★の記録を保存
+      starredIds: Array.from(starredIds), 
       optShuffle: chkShuffle.checked,
       optSpeakFront: chkSpeakFront.checked,
       optSpeakBack: chkSpeakBack.checked,
@@ -384,6 +394,7 @@
     } catch(e) {}
   }
 
+  // ★ 進捗の復元と、テキスト変更時のスマート・マージ処理
   function loadProgress(fileName, newlyParsedDeck) {
     try {
       const json = localStorage.getItem(STORAGE_PREFIX + fileName);
@@ -391,10 +402,7 @@
 
       const data = JSON.parse(json);
       
-      if (newlyParsedDeck && data.rawDeck && newlyParsedDeck.length !== data.rawDeck.length) {
-        return false;
-      }
-
+      // 設定等の復元
       if (data.optShuffle !== undefined) chkShuffle.checked = data.optShuffle;
       if (data.optSpeakFront !== undefined) chkSpeakFront.checked = data.optSpeakFront;
       if (data.optSpeakBack !== undefined) chkSpeakBack.checked = data.optSpeakBack;
@@ -402,6 +410,52 @@
       
       if (data.starredIds) starredIds = new Set(data.starredIds);
 
+      // ★ 新しいテキストが読み込まれ、内容が変更されている場合の処理（マージ）
+      if (newlyParsedDeck && data.rawDeck) {
+         if (isDeckChanged(data.rawDeck, newlyParsedDeck)) {
+             
+             // 1. 古いデータで「覚えた！（activeDeckにいない）」IDを抽出
+             const activeIds = new Set((data.activeDeck || []).map(c => c.id));
+             const learnedIds = new Set();
+             data.rawDeck.forEach(c => {
+                 if (!activeIds.has(c.id)) learnedIds.add(c.id);
+             });
+
+             // 2. rawDeck を最新のテキストに更新
+             rawDeck = newlyParsedDeck;
+             
+             // 3. activeDeck を最新のテキストで再構築（過去に「覚えた」IDは除く）
+             activeDeck = newlyParsedDeck.filter(c => !learnedIds.has(c.id));
+
+             // 4. 現在進行中の currentSession のテキストも最新のものに差し替える
+             //    (シャッフルされた並び順と枚数はそのまま維持する)
+             if (data.currentSession && data.currentSession.length > 0) {
+                 currentSession = data.currentSession.map(oldCard => {
+                     // 新しいテキストの同じIDのカードを探す。なければ古いまま（行削除された場合など）
+                     const updatedCard = newlyParsedDeck.find(c => c.id === oldCard.id);
+                     return updatedCard ? updatedCard : oldCard;
+                 });
+             } else {
+                 currentSession = [];
+             }
+
+             // ★ 行数が減ってしまった場合の安全装置（★やインデックスの範囲外アクセス防止）
+             starredIds = new Set(Array.from(starredIds).filter(id => id < newlyParsedDeck.length));
+             if (typeof data.savedIndex === 'number' && data.savedIndex < currentSession.length) {
+                 currentIndex = data.savedIndex;
+             } else {
+                 currentIndex = 0;
+             }
+
+             render(false);
+             cardText.innerHTML = `<span class='info-msg'>テキストの変更を反映し、<br>進捗を引き継ぎました</span><br>▼ タップして再開`;
+             isFront = true;
+             saveToStorage(); // マージ結果を保存
+             return true;
+         }
+      }
+
+      // 通常ロード（テキスト変更なし、またはブラウザリロード時）
       if (data.rawDeck && data.rawDeck.length > 0) {
         rawDeck = data.rawDeck;
         activeDeck = data.activeDeck || [...rawDeck];
@@ -409,8 +463,8 @@
         if (data.currentSession && data.currentSession.length > 0) {
           currentSession = data.currentSession;
         } else {
-          startRound(); // 内部で currentSession を構築する
-          return true;  // renderはstartRound内で呼ばれる
+          startRound(); 
+          return true;  
         }
 
         if (typeof data.savedIndex === 'number' && data.savedIndex < currentSession.length) {
@@ -442,7 +496,6 @@
     fileNameDisplay.textContent = currentFileName ? `📂 ${currentFileName}` : "";
   }
 
-  // --- ファイル読込 ---
   fileInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -476,6 +529,7 @@
 
     let tempDeck = [];
     lines.forEach((line, idx) => {
+      // v14のシンプルなカンマ分割（Excel特殊処理なし）
       const parts = line.split(separator);
       if (parts.length >= 2) {
         tempDeck.push({ 
@@ -509,7 +563,6 @@
   }
 
   function startRound() {
-    // 「★のみ」チェックがある場合は、activeDeckの中から★がついているものだけを抽出
     if (chkStarOnly.checked) {
       currentSession = activeDeck.filter(c => starredIds.has(c.id));
     } else {
@@ -530,9 +583,6 @@
     }
   }
 
-  // --- 操作ロジック ---
-
-  // ★をつける・外す
   function toggleStar(e) {
     if(e) e.stopPropagation();
     if (currentSession.length === 0 || currentIndex >= currentSession.length) return;
@@ -545,7 +595,7 @@
     }
     
     saveToStorage();
-    render(false); // 音声は出さずにUIだけ更新
+    render(false); 
   }
 
   function markAsKnown(e) {
@@ -596,7 +646,6 @@
   }
 
   function render(playAudio = true) {
-    // ヘッダー情報
     if (rawDeck.length > 0) {
         if (chkStarOnly.checked) {
           const starRemaining = activeDeck.filter(c => starredIds.has(c.id)).length;
@@ -616,23 +665,20 @@
       return;
     }
 
-    // 「★のみ」で対象カードが1枚もない場合
     if (currentSession.length === 0) {
       if (chkStarOnly.checked && activeDeck.length > 0) {
-        showFinishScreen(true, true); // ★完了
+        showFinishScreen(true, true); 
       } else {
-        showFinishScreen(true, false); // 全完了
+        showFinishScreen(true, false); 
       }
       return;
     }
 
-    // 周回完了
     if (currentIndex >= currentSession.length) {
       showFinishScreen(false, false);
       return;
     }
 
-    // 通常表示
     btnKnown.style.visibility = 'visible';
     btnJump.style.display = 'inline-block';
     btnStar.style.display = 'block';
@@ -642,7 +688,6 @@
     const card = currentSession[currentIndex];
     const textToShow = isFront ? card.front : card.back;
     
-    // ★ボタンの表示状態を更新
     if (starredIds.has(card.id)) {
       btnStar.textContent = '★';
       btnStar.className = 'star-btn active';
@@ -651,7 +696,9 @@
       btnStar.className = 'star-btn';
     }
     
+    // 改行は \n にのみ対応
     cardText.textContent = textToShow.replace(/\\n/g, '\n');
+    
     sideLabel.style.display = 'block';
     sideLabel.textContent = isFront ? '表 (FRONT)' : '裏 (BACK)';
     sideLabel.style.background = isFront ? '#38bdf8' : '#f472b6';
@@ -706,7 +753,6 @@
     if(e) e.stopPropagation();
     if (rawDeck.length === 0) return;
     
-    // 現在のモードでの残り枚数
     let remaining = chkStarOnly.checked 
         ? activeDeck.filter(c => starredIds.has(c.id)).length 
         : activeDeck.length;
@@ -714,7 +760,6 @@
     if (currentIndex >= currentSession.length) {
       if (remaining === 0) {
         if (chkStarOnly.checked) {
-          // ★モード制覇時は自動でチェックを外して通常モードに戻る
           chkStarOnly.checked = false;
           saveToStorage();
           startRound();
