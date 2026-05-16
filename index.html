@@ -535,7 +535,7 @@
         tempDeck.push({ 
           id: idx,
           front: parts[0].trim(), 
-          back: parts.slice(1).join(separator).trim() 
+          back: parts[1].trim() // ← 2列目（parts[1]）だけを裏面にする
         });
       }
     });
