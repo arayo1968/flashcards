@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Simple Flashcards v14.3 (Scroll & Col2 Only)</title>
+<title>Simple Flashcards v14.4 (Safe Scroll Fix)</title>
 <style>
   :root {
     --bg: #0f172a;
@@ -112,12 +112,12 @@
     min-height: 200px;
   }
 
-  /* ★カード外枠：スクロールバーの設定 */
+  /* ★カード外枠 */
   .card {
     background: var(--card-bg);
     border: 1px solid var(--border);
     border-radius: 16px;
-    padding: 40px 20px;
+    padding: 20px 20px; /* 余白を少し削って長文を見やすく */
     height: 100%;
     max-height: 55vh;
     box-shadow: 0 10px 25px rgba(0,0,0,0.3);
@@ -127,25 +127,23 @@
     overflow-y: auto; /* はみ出たらスクロール */
   }
 
-  /* スクロールバーのデザイン（Webkit系） */
-  .card::-webkit-scrollbar {
-    width: 8px;
-  }
-  .card::-webkit-scrollbar-track {
-    background: rgba(255, 255, 255, 0.02);
-    border-radius: 8px;
-  }
-  .card::-webkit-scrollbar-thumb {
-    background: #475569;
-    border-radius: 8px;
-  }
-  .card::-webkit-scrollbar-thumb:hover {
-    background: var(--accent);
+  /* ★ 見切れ防止の魔法（長文時は上から、短文時は中央に自動配置） */
+  .card::before,
+  .card::after {
+    content: "";
+    flex: 1;
+    min-height: 0;
   }
 
-  /* ★カードの内側：文字が少ない時は中央、多い時は上から表示 */
+  /* スクロールバーのデザイン */
+  .card::-webkit-scrollbar { width: 8px; }
+  .card::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.02); border-radius: 8px; }
+  .card::-webkit-scrollbar-thumb { background: #475569; border-radius: 8px; }
+  .card::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+  /* ★カードの内側の文字 */
   .card-inner {
-    margin: auto 0;
+    flex: 0 0 auto;
     text-align: center;
     font-size: 24px;
     font-weight: bold;
@@ -547,7 +545,6 @@
         tempDeck.push({ 
           id: idx,
           front: parts[0].trim(), 
-          // ★ 裏面は「2列目」だけを表示する（3列目以降は無視）
           back: (parts[1] ? parts[1].trim() : "") 
         });
       }
@@ -717,7 +714,7 @@
     btnNext.textContent = isFront ? "答えを見る" : "次へ";
     lblPosition.textContent = `${currentIndex + 1} / ${currentSession.length}`;
 
-    // カードをめくった時、一番上までスクロール位置をリセットする
+    // ★ カードをめくった時、必ず一番上までスクロール位置を戻す
     cardScrollArea.scrollTop = 0;
 
     if (playAudio) {
@@ -763,11 +760,10 @@
     }
   }
 
-  // isBtnClick=true の場合は、文字選択などの判定を無視して強制的に次へ行く
+  // ★ マウスで文字を選択（ハイライト）した時はめくられないように調整
   function stepNext(e, isBtnClick = false) {
     if(e) {
       e.stopPropagation();
-      // ★ PCなどでテキストをドラッグ選択した時は、カードをめくらない（誤操作防止）
       if (!isBtnClick && window.getSelection().toString().length > 0) {
         return;
       }
