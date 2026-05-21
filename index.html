@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Simple Flashcards v14.2 (Smart Merge, No Excel Fix)</title>
+<title>Simple Flashcards v14.3 (Scroll & Col2 Only)</title>
 <style>
   :root {
     --bg: #0f172a;
@@ -111,6 +111,8 @@
     cursor: pointer; 
     min-height: 200px;
   }
+
+  /* ★カード外枠：スクロールバーの設定 */
   .card {
     background: var(--card-bg);
     border: 1px solid var(--border);
@@ -118,15 +120,37 @@
     padding: 40px 20px;
     height: 100%;
     max-height: 55vh;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+    
     display: flex;
-    align-items: center;
-    justify-content: center;
+    flex-direction: column;
+    overflow-y: auto; /* はみ出たらスクロール */
+  }
+
+  /* スクロールバーのデザイン（Webkit系） */
+  .card::-webkit-scrollbar {
+    width: 8px;
+  }
+  .card::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 8px;
+  }
+  .card::-webkit-scrollbar-thumb {
+    background: #475569;
+    border-radius: 8px;
+  }
+  .card::-webkit-scrollbar-thumb:hover {
+    background: var(--accent);
+  }
+
+  /* ★カードの内側：文字が少ない時は中央、多い時は上から表示 */
+  .card-inner {
+    margin: auto 0;
     text-align: center;
     font-size: 24px;
     font-weight: bold;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.3);
     white-space: pre-wrap;
-    overflow-y: auto;
+    width: 100%;
   }
 
   .star-btn {
@@ -253,12 +277,14 @@
     <span class="stat-right" id="lblTotal">全 -- 枚</span>
   </div>
 
-  <div class="card-area" id="cardArea" onclick="stepNext()">
+  <div class="card-area" id="cardArea" onclick="stepNext(event)">
     <div class="label" id="sideLabel" style="display:none">FRONT</div>
     <button class="star-btn" id="btnStar" onclick="toggleStar(event)" style="display:none;">☆</button>
-    <div class="card" id="cardText">
-      上の「📂 ファイル」から<br>データを選んでください
-      <span class="pc-hint">※PC操作：Space/→:次へ | ←:戻る | ↑:覚えた | S:★</span>
+    <div class="card" id="cardScrollArea">
+      <div class="card-inner" id="cardText">
+        上の「📂 ファイル」から<br>データを選んでください
+        <span class="pc-hint">※PC操作：Space/→:次へ | ←:戻る | ↑:覚えた | S:★</span>
+      </div>
     </div>
   </div>
 
@@ -275,13 +301,12 @@
   <div class="action-row">
     <button class="btn-prev" id="btnPrev" onclick="stepPrev(event)">戻る</button>
     <button class="btn-known" id="btnKnown" onclick="markAsKnown(event)">覚えた！</button>
-    <button class="btn-next" id="btnNext" onclick="stepNext(event)">次へ</button>
+    <button class="btn-next" id="btnNext" onclick="stepNext(event, true)">次へ</button>
   </div>
 </div>
 
 <script>
   const SKIP_STEP = 10; 
-  // v14の保存キーをそのまま使用し、既存データを維持
   const STORAGE_PREFIX = 'fc_deck_v14_'; 
   const LAST_FILE_KEY = 'fc_last_file_v14';
 
@@ -304,6 +329,7 @@
   const cardText = document.getElementById('cardText');
   const sideLabel = document.getElementById('sideLabel');
   const btnStar = document.getElementById('btnStar');
+  const cardScrollArea = document.getElementById('cardScrollArea');
   
   const lblRemaining = document.getElementById('lblRemaining');
   const lblTotal = document.getElementById('lblTotal');
@@ -315,7 +341,6 @@
   const btnNext = document.getElementById('btnNext');
   const btnKnown = document.getElementById('btnKnown');
 
-  // デッキの中身が変更されたかチェックする関数
   function isDeckChanged(oldDeck, newDeck) {
       if (!oldDeck || !newDeck) return true;
       if (oldDeck.length !== newDeck.length) return true;
@@ -354,7 +379,7 @@
   document.addEventListener('keydown', (e) => {
     if (rawDeck.length === 0) return;
     if (e.code === 'Space' || e.code === 'Enter' || e.code === 'ArrowRight') {
-      e.preventDefault(); stepNext();
+      e.preventDefault(); stepNext(null, true);
     } else if (e.code === 'ArrowLeft') {
       e.preventDefault(); stepPrev();
     } else if (e.code === 'ArrowUp') {
@@ -394,7 +419,6 @@
     } catch(e) {}
   }
 
-  // ★ 進捗の復元と、テキスト変更時のスマート・マージ処理
   function loadProgress(fileName, newlyParsedDeck) {
     try {
       const json = localStorage.getItem(STORAGE_PREFIX + fileName);
@@ -402,7 +426,6 @@
 
       const data = JSON.parse(json);
       
-      // 設定等の復元
       if (data.optShuffle !== undefined) chkShuffle.checked = data.optShuffle;
       if (data.optSpeakFront !== undefined) chkSpeakFront.checked = data.optSpeakFront;
       if (data.optSpeakBack !== undefined) chkSpeakBack.checked = data.optSpeakBack;
@@ -410,28 +433,20 @@
       
       if (data.starredIds) starredIds = new Set(data.starredIds);
 
-      // ★ 新しいテキストが読み込まれ、内容が変更されている場合の処理（マージ）
       if (newlyParsedDeck && data.rawDeck) {
          if (isDeckChanged(data.rawDeck, newlyParsedDeck)) {
              
-             // 1. 古いデータで「覚えた！（activeDeckにいない）」IDを抽出
              const activeIds = new Set((data.activeDeck || []).map(c => c.id));
              const learnedIds = new Set();
              data.rawDeck.forEach(c => {
                  if (!activeIds.has(c.id)) learnedIds.add(c.id);
              });
 
-             // 2. rawDeck を最新のテキストに更新
              rawDeck = newlyParsedDeck;
-             
-             // 3. activeDeck を最新のテキストで再構築（過去に「覚えた」IDは除く）
              activeDeck = newlyParsedDeck.filter(c => !learnedIds.has(c.id));
 
-             // 4. 現在進行中の currentSession のテキストも最新のものに差し替える
-             //    (シャッフルされた並び順と枚数はそのまま維持する)
              if (data.currentSession && data.currentSession.length > 0) {
                  currentSession = data.currentSession.map(oldCard => {
-                     // 新しいテキストの同じIDのカードを探す。なければ古いまま（行削除された場合など）
                      const updatedCard = newlyParsedDeck.find(c => c.id === oldCard.id);
                      return updatedCard ? updatedCard : oldCard;
                  });
@@ -439,7 +454,6 @@
                  currentSession = [];
              }
 
-             // ★ 行数が減ってしまった場合の安全装置（★やインデックスの範囲外アクセス防止）
              starredIds = new Set(Array.from(starredIds).filter(id => id < newlyParsedDeck.length));
              if (typeof data.savedIndex === 'number' && data.savedIndex < currentSession.length) {
                  currentIndex = data.savedIndex;
@@ -450,12 +464,11 @@
              render(false);
              cardText.innerHTML = `<span class='info-msg'>テキストの変更を反映し、<br>進捗を引き継ぎました</span><br>▼ タップして再開`;
              isFront = true;
-             saveToStorage(); // マージ結果を保存
+             saveToStorage(); 
              return true;
          }
       }
 
-      // 通常ロード（テキスト変更なし、またはブラウザリロード時）
       if (data.rawDeck && data.rawDeck.length > 0) {
         rawDeck = data.rawDeck;
         activeDeck = data.activeDeck || [...rawDeck];
@@ -529,13 +542,13 @@
 
     let tempDeck = [];
     lines.forEach((line, idx) => {
-      // v14のシンプルなカンマ分割（Excel特殊処理なし）
       const parts = line.split(separator);
       if (parts.length >= 2) {
         tempDeck.push({ 
           id: idx,
           front: parts[0].trim(), 
-          back: parts[1].trim() // ← 2列目（parts[1]）だけを裏面にする
+          // ★ 裏面は「2列目」だけを表示する（3列目以降は無視）
+          back: (parts[1] ? parts[1].trim() : "") 
         });
       }
     });
@@ -605,7 +618,7 @@
     
     activeDeck = activeDeck.filter(c => c.id !== currentCard.id);
     saveToStorage();
-    stepNext();
+    stepNext(null, true);
   }
 
   function skipIndex(direction) {
@@ -696,15 +709,16 @@
       btnStar.className = 'star-btn';
     }
     
-    // 改行は \n にのみ対応
     cardText.textContent = textToShow.replace(/\\n/g, '\n');
-    
     sideLabel.style.display = 'block';
     sideLabel.textContent = isFront ? '表 (FRONT)' : '裏 (BACK)';
     sideLabel.style.background = isFront ? '#38bdf8' : '#f472b6';
     
     btnNext.textContent = isFront ? "答えを見る" : "次へ";
     lblPosition.textContent = `${currentIndex + 1} / ${currentSession.length}`;
+
+    // カードをめくった時、一番上までスクロール位置をリセットする
+    cardScrollArea.scrollTop = 0;
 
     if (playAudio) {
       if (isFront && chkSpeakFront.checked) {
@@ -749,8 +763,16 @@
     }
   }
 
-  function stepNext(e) {
-    if(e) e.stopPropagation();
+  // isBtnClick=true の場合は、文字選択などの判定を無視して強制的に次へ行く
+  function stepNext(e, isBtnClick = false) {
+    if(e) {
+      e.stopPropagation();
+      // ★ PCなどでテキストをドラッグ選択した時は、カードをめくらない（誤操作防止）
+      if (!isBtnClick && window.getSelection().toString().length > 0) {
+        return;
+      }
+    }
+
     if (rawDeck.length === 0) return;
     
     let remaining = chkStarOnly.checked 
