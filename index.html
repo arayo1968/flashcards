@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Simple Flashcards v14.4 (Safe Scroll Fix)</title>
+<title>Simple Flashcards v14.5 (Auto-Play)</title>
 <style>
   :root {
     --bg: #0f172a;
@@ -112,22 +112,20 @@
     min-height: 200px;
   }
 
-  /* ★カード外枠 */
   .card {
     background: var(--card-bg);
     border: 1px solid var(--border);
     border-radius: 16px;
-    padding: 20px 20px; /* 余白を少し削って長文を見やすく */
+    padding: 20px 20px; 
     height: 100%;
     max-height: 55vh;
     box-shadow: 0 10px 25px rgba(0,0,0,0.3);
     
     display: flex;
     flex-direction: column;
-    overflow-y: auto; /* はみ出たらスクロール */
+    overflow-y: auto; 
   }
 
-  /* ★ 見切れ防止の魔法（長文時は上から、短文時は中央に自動配置） */
   .card::before,
   .card::after {
     content: "";
@@ -135,13 +133,11 @@
     min-height: 0;
   }
 
-  /* スクロールバーのデザイン */
   .card::-webkit-scrollbar { width: 8px; }
   .card::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.02); border-radius: 8px; }
   .card::-webkit-scrollbar-thumb { background: #475569; border-radius: 8px; }
   .card::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 
-  /* ★カードの内側の文字 */
   .card-inner {
     flex: 0 0 auto;
     text-align: center;
@@ -189,13 +185,13 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 16px;
+    gap: 12px;
     margin-top: 10px;
   }
   .position-info {
     font-size: 14px;
     color: #cbd5e1;
-    min-width: 80px;
+    min-width: 70px;
     text-align: center;
   }
   .btn-skip {
@@ -281,7 +277,7 @@
     <div class="card" id="cardScrollArea">
       <div class="card-inner" id="cardText">
         上の「📂 ファイル」から<br>データを選んでください
-        <span class="pc-hint">※PC操作：Space/→:次へ | ←:戻る | ↑:覚えた | S:★</span>
+        <span class="pc-hint">※PC操作：Space/→:次へ | ←:戻る | ↑:覚えた | S:★ | A:自動</span>
       </div>
     </div>
   </div>
@@ -290,6 +286,7 @@
     <button class="btn-skip" id="btnSkipPrev" onclick="skipIndex(-1)">-10</button>
     <span class="position-info" id="lblPosition">-- / --</span>
     <button class="btn-skip" id="btnSkipNext" onclick="skipIndex(1)">+10</button>
+    <button class="btn-skip" id="btnAutoPlay" onclick="toggleAutoPlay(event)" style="margin-left: 8px; min-width: 75px;">▶ 自動</button>
   </div>
   
   <div class="jump-container">
@@ -304,7 +301,14 @@
 </div>
 
 <script>
+  // ==========================================
+  // ★ カスタマイズ設定（数字を書き換えて調整できます）
+  // ==========================================
   const SKIP_STEP = 10; 
+  const AUTO_SEC_FRONT = 0.5; // 表面を表示する秒数（オートプレイ時）
+  const AUTO_SEC_BACK = 0.5; // 裏面を表示する秒数（オートプレイ時）
+  // ==========================================
+
   const STORAGE_PREFIX = 'fc_deck_v14_'; 
   const LAST_FILE_KEY = 'fc_last_file_v14';
 
@@ -317,6 +321,10 @@
   
   let starredIds = new Set(); 
 
+  // ★ オートプレイ用変数
+  let autoPlayTimer = null;
+  let isAutoPlaying = false;
+
   const fileInput = document.getElementById('fileInput');
   const fileNameDisplay = document.getElementById('fileNameDisplay');
   const chkShuffle = document.getElementById('chkShuffle');
@@ -328,6 +336,7 @@
   const sideLabel = document.getElementById('sideLabel');
   const btnStar = document.getElementById('btnStar');
   const cardScrollArea = document.getElementById('cardScrollArea');
+  const btnAutoPlay = document.getElementById('btnAutoPlay');
   
   const lblRemaining = document.getElementById('lblRemaining');
   const lblTotal = document.getElementById('lblTotal');
@@ -384,6 +393,8 @@
       e.preventDefault(); markAsKnown();
     } else if (e.code === 'KeyS') {
       e.preventDefault(); toggleStar();
+    } else if (e.code === 'KeyA') { // ★ AキーでオートプレイON/OFF
+      e.preventDefault(); toggleAutoPlay();
     }
   });
 
@@ -497,6 +508,7 @@
     if(!currentFileName) return;
     if(!confirm(`現在開いている「${currentFileName}」の進捗データ（覚えた記録、★など）を全て削除して初期化しますか？`)) return;
     
+    if (isAutoPlaying) toggleAutoPlay(); // 念のため自動再生ストップ
     localStorage.removeItem(STORAGE_PREFIX + currentFileName);
     starredIds.clear();
     chkStarOnly.checked = false;
@@ -511,6 +523,7 @@
     const file = e.target.files[0];
     if (!file) return;
 
+    if (isAutoPlaying) toggleAutoPlay(); // ファイル読込時は自動再生ストップ
     currentFileName = file.name; 
     updateFileNameDisplay();
 
@@ -593,6 +606,30 @@
     }
   }
 
+  // ★ オートプレイのON/OFF切り替え関数
+  function toggleAutoPlay(e) {
+    if(e) e.stopPropagation();
+    if (rawDeck.length === 0) return;
+    // 完了画面では開始しない
+    if (currentIndex >= currentSession.length || currentSession.length === 0) return;
+
+    isAutoPlaying = !isAutoPlaying;
+
+    if (isAutoPlaying) {
+      btnAutoPlay.textContent = '⏸ 停止';
+      btnAutoPlay.style.background = '#ef4444';
+      btnAutoPlay.style.color = '#fff';
+      btnAutoPlay.style.borderColor = '#ef4444';
+      render(false); // タイマーを始動させるために再描画（音声は重複しないようfalse）
+    } else {
+      btnAutoPlay.textContent = '▶ 自動';
+      btnAutoPlay.style.background = '#334155';
+      btnAutoPlay.style.color = '#94a3b8';
+      btnAutoPlay.style.borderColor = '#475569';
+      clearTimeout(autoPlayTimer);
+    }
+  }
+
   function toggleStar(e) {
     if(e) e.stopPropagation();
     if (currentSession.length === 0 || currentIndex >= currentSession.length) return;
@@ -672,6 +709,7 @@
     if (rawDeck.length === 0) {
       btnJump.style.display = 'none';
       btnStar.style.display = 'none';
+      btnAutoPlay.style.display = 'none';
       return;
     }
 
@@ -692,6 +730,7 @@
     btnKnown.style.visibility = 'visible';
     btnJump.style.display = 'inline-block';
     btnStar.style.display = 'block';
+    btnAutoPlay.style.display = 'inline-block';
     btnSkipPrev.disabled = false;
     btnSkipNext.disabled = false;
 
@@ -714,7 +753,6 @@
     btnNext.textContent = isFront ? "答えを見る" : "次へ";
     lblPosition.textContent = `${currentIndex + 1} / ${currentSession.length}`;
 
-    // ★ カードをめくった時、必ず一番上までスクロール位置を戻す
     cardScrollArea.scrollTop = 0;
 
     if (playAudio) {
@@ -724,9 +762,20 @@
         speakEnglish(card.back);
       }
     }
+
+    // ★ オートプレイのタイマー処理（画面が更新されるたびに再設定される）
+    if (isAutoPlaying) {
+      clearTimeout(autoPlayTimer);
+      const waitSeconds = isFront ? AUTO_SEC_FRONT : AUTO_SEC_BACK;
+      autoPlayTimer = setTimeout(() => {
+        stepNext(null, true); // trueで文字選択判定を強制スルー
+      }, waitSeconds * 1000);
+    }
   }
 
   function showFinishScreen(isAllClear, isStarMode) {
+    if (isAutoPlaying) toggleAutoPlay(); // ★ 完了画面で自動再生をストップ
+
     sideLabel.style.display = 'none';
     btnKnown.style.visibility = 'hidden';
     lblPosition.textContent = '- / -'; 
@@ -760,7 +809,6 @@
     }
   }
 
-  // ★ マウスで文字を選択（ハイライト）した時はめくられないように調整
   function stepNext(e, isBtnClick = false) {
     if(e) {
       e.stopPropagation();
