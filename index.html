@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Simple Flashcards v14.5 (Auto-Play)</title>
+<title>Simple Flashcards v14.6 (Auto-Focus Mode)</title>
 <style>
   :root {
     --bg: #0f172a;
@@ -302,11 +302,11 @@
 
 <script>
   // ==========================================
-  // ★ カスタマイズ設定（数字を書き換えて調整できます）
+  // ★ カスタマイズ設定
   // ==========================================
   const SKIP_STEP = 10; 
-  const AUTO_SEC_FRONT = 1; // 表面を表示する秒数（オートプレイ時）
-  const AUTO_SEC_BACK = 1; // 裏面を表示する秒数（オートプレイ時）
+  const AUTO_SEC_FRONT = 3; // 表面を表示する秒数
+  const AUTO_SEC_BACK = 3;  // 裏面を表示する秒数
   // ==========================================
 
   const STORAGE_PREFIX = 'fc_deck_v14_'; 
@@ -321,7 +321,6 @@
   
   let starredIds = new Set(); 
 
-  // ★ オートプレイ用変数
   let autoPlayTimer = null;
   let isAutoPlaying = false;
 
@@ -347,6 +346,19 @@
   const btnJump = document.getElementById('btnJump');
   const btnNext = document.getElementById('btnNext');
   const btnKnown = document.getElementById('btnKnown');
+
+  // テキストを安全にHTML表示するための関数
+  function escapeHTML(str) {
+    return str.replace(/[&<>'"]/g, function(match) {
+      return {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        "'": '&#39;',
+        '"': '&quot;'
+      }[match];
+    });
+  }
 
   function isDeckChanged(oldDeck, newDeck) {
       if (!oldDeck || !newDeck) return true;
@@ -393,7 +405,7 @@
       e.preventDefault(); markAsKnown();
     } else if (e.code === 'KeyS') {
       e.preventDefault(); toggleStar();
-    } else if (e.code === 'KeyA') { // ★ AキーでオートプレイON/OFF
+    } else if (e.code === 'KeyA') {
       e.preventDefault(); toggleAutoPlay();
     }
   });
@@ -508,7 +520,7 @@
     if(!currentFileName) return;
     if(!confirm(`現在開いている「${currentFileName}」の進捗データ（覚えた記録、★など）を全て削除して初期化しますか？`)) return;
     
-    if (isAutoPlaying) toggleAutoPlay(); // 念のため自動再生ストップ
+    if (isAutoPlaying) toggleAutoPlay();
     localStorage.removeItem(STORAGE_PREFIX + currentFileName);
     starredIds.clear();
     chkStarOnly.checked = false;
@@ -523,7 +535,7 @@
     const file = e.target.files[0];
     if (!file) return;
 
-    if (isAutoPlaying) toggleAutoPlay(); // ファイル読込時は自動再生ストップ
+    if (isAutoPlaying) toggleAutoPlay(); 
     currentFileName = file.name; 
     updateFileNameDisplay();
 
@@ -606,11 +618,9 @@
     }
   }
 
-  // ★ オートプレイのON/OFF切り替え関数
   function toggleAutoPlay(e) {
     if(e) e.stopPropagation();
     if (rawDeck.length === 0) return;
-    // 完了画面では開始しない
     if (currentIndex >= currentSession.length || currentSession.length === 0) return;
 
     isAutoPlaying = !isAutoPlaying;
@@ -620,13 +630,14 @@
       btnAutoPlay.style.background = '#ef4444';
       btnAutoPlay.style.color = '#fff';
       btnAutoPlay.style.borderColor = '#ef4444';
-      render(false); // タイマーを始動させるために再描画（音声は重複しないようfalse）
+      render(false); 
     } else {
       btnAutoPlay.textContent = '▶ 自動';
       btnAutoPlay.style.background = '#334155';
       btnAutoPlay.style.color = '#94a3b8';
       btnAutoPlay.style.borderColor = '#475569';
       clearTimeout(autoPlayTimer);
+      render(false); // ★停止した瞬間に全表示に戻す
     }
   }
 
@@ -737,6 +748,25 @@
     const card = currentSession[currentIndex];
     const textToShow = isFront ? card.front : card.back;
     
+    // ★ 魔改造：オートプレイ中の文字ピックアップ処理
+    let rawText = textToShow.replace(/\\n/g, '\n');
+    let speakText = rawText; // 音声読み上げ用
+    let htmlContent = escapeHTML(rawText).replace(/\n/g, '<br>'); // 画面表示用
+
+    if (isAutoPlaying) {
+      // 改行で分割して、空行を除外
+      const parts = rawText.split('\n').filter(p => p.trim() !== "");
+      if (parts.length > 1) {
+        // ランダムに1つ選ぶ
+        const randomIndex = Math.floor(Math.random() * parts.length);
+        speakText = parts[randomIndex];
+        // 表示用のHTMLを組み立てる（選ばれた文字 ＋ 小さく他◯件）
+        htmlContent = escapeHTML(speakText) + `<br><br><span style="font-size: 16px; color: #94a3b8; font-weight: normal;">（他${parts.length - 1}件）</span>`;
+      }
+    }
+
+    cardText.innerHTML = htmlContent;
+
     if (starredIds.has(card.id)) {
       btnStar.textContent = '★';
       btnStar.className = 'star-btn active';
@@ -745,7 +775,6 @@
       btnStar.className = 'star-btn';
     }
     
-    cardText.textContent = textToShow.replace(/\\n/g, '\n');
     sideLabel.style.display = 'block';
     sideLabel.textContent = isFront ? '表 (FRONT)' : '裏 (BACK)';
     sideLabel.style.background = isFront ? '#38bdf8' : '#f472b6';
@@ -757,24 +786,23 @@
 
     if (playAudio) {
       if (isFront && chkSpeakFront.checked) {
-        speakEnglish(card.front);
+        speakEnglish(speakText); // 選ばれた1つだけを読む
       } else if (!isFront && chkSpeakBack.checked) {
-        speakEnglish(card.back);
+        speakEnglish(speakText); // 選ばれた1つだけを読む
       }
     }
 
-    // ★ オートプレイのタイマー処理（画面が更新されるたびに再設定される）
     if (isAutoPlaying) {
       clearTimeout(autoPlayTimer);
       const waitSeconds = isFront ? AUTO_SEC_FRONT : AUTO_SEC_BACK;
       autoPlayTimer = setTimeout(() => {
-        stepNext(null, true); // trueで文字選択判定を強制スルー
+        stepNext(null, true); 
       }, waitSeconds * 1000);
     }
   }
 
   function showFinishScreen(isAllClear, isStarMode) {
-    if (isAutoPlaying) toggleAutoPlay(); // ★ 完了画面で自動再生をストップ
+    if (isAutoPlaying) toggleAutoPlay(); 
 
     sideLabel.style.display = 'none';
     btnKnown.style.visibility = 'hidden';
