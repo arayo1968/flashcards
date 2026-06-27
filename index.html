@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Simple Flashcards v14.7 (Tab Memory Fix)</title>
+<title>Simple Flashcards v14.9 (Storage Optimizer)</title>
 <style>
   :root {
     --bg: #0f172a;
@@ -347,6 +347,21 @@
   const btnNext = document.getElementById('btnNext');
   const btnKnown = document.getElementById('btnKnown');
 
+  // ★ 追加：過去のバージョンのゴミデータを削除して容量を空ける関数
+  function cleanupOldVersions() {
+    const keysToDelete = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith('fc_deck_v12_') || 
+                  key.startsWith('fc_deck_v13_') || 
+                  key.startsWith('fc_deck_v15_') || 
+                  key.startsWith('fc_deck_v16_'))) {
+        keysToDelete.push(key);
+      }
+    }
+    keysToDelete.forEach(k => localStorage.removeItem(k));
+  }
+
   function escapeHTML(str) {
     return str.replace(/[&<>'"]/g, function(match) {
       return {
@@ -371,14 +386,15 @@
   }
 
   window.addEventListener('DOMContentLoaded', () => {
+    // 起動時に大掃除を実行
+    cleanupOldVersions();
+
     btnSkipPrev.textContent = `-${SKIP_STEP}`;
     btnSkipNext.textContent = `+${SKIP_STEP}`;
     
-    // ★ v14.7の魔法：タブごとの専用記憶（Tab Memory）を確認！
     let tabFile = sessionStorage.getItem('fc_tab_file');
     let lastFile = localStorage.getItem(LAST_FILE_KEY);
     
-    // タブ記憶があればそれを、無ければ最後に開いたファイルを採用
     let fileToLoad = tabFile ? tabFile : lastFile;
     
     if (fileToLoad) {
@@ -442,9 +458,11 @@
     try {
       localStorage.setItem(STORAGE_PREFIX + currentFileName, JSON.stringify(data));
       localStorage.setItem(LAST_FILE_KEY, currentFileName);
-      // ★ タブごとにファイルを紐付けて記憶
       sessionStorage.setItem('fc_tab_file', currentFileName);
-    } catch(e) {}
+    } catch(e) {
+      // ★ 追加：容量オーバー時にユーザーへ警告を出す
+      alert("⚠️ ブラウザの保存容量がいっぱいです！\nこれ以上セーブできません。「初期化」ボタンで不要なファイルのデータを消去して空き容量を確保してください。");
+    }
   }
 
   function loadProgress(fileName, newlyParsedDeck) {
@@ -525,11 +543,11 @@
 
   function clearData() {
     if(!currentFileName) return;
-    if(!confirm(`現在開いている「${currentFileName}」の進捗データ（覚えた記録、★など）を全て削除して初期化しますか？`)) return;
+    if(!confirm(`現在開いている「${currentFileName}」の進捗データ（覚えた記録、★など）を全て削除して初期化しますか？\n※容量不足の解消にも効果的です。`)) return;
     
     if (isAutoPlaying) toggleAutoPlay(); 
     localStorage.removeItem(STORAGE_PREFIX + currentFileName);
-    sessionStorage.removeItem('fc_tab_file'); // ★ 初期化時はタブの記憶も消す
+    sessionStorage.removeItem('fc_tab_file');
     starredIds.clear();
     chkStarOnly.checked = false;
     fullReset(); 
