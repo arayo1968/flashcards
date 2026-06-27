@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Simple Flashcards v14.6 (Auto-Focus Mode)</title>
+<title>Simple Flashcards v14.7 (Tab Memory Fix)</title>
 <style>
   :root {
     --bg: #0f172a;
@@ -305,8 +305,8 @@
   // ★ カスタマイズ設定
   // ==========================================
   const SKIP_STEP = 10; 
-  const AUTO_SEC_FRONT = 1; // 表面を表示する秒数
-  const AUTO_SEC_BACK = 1;  // 裏面を表示する秒数
+  const AUTO_SEC_FRONT = 3; // 表面を表示する秒数
+  const AUTO_SEC_BACK = 3;  // 裏面を表示する秒数
   // ==========================================
 
   const STORAGE_PREFIX = 'fc_deck_v14_'; 
@@ -347,7 +347,6 @@
   const btnNext = document.getElementById('btnNext');
   const btnKnown = document.getElementById('btnKnown');
 
-  // テキストを安全にHTML表示するための関数
   function escapeHTML(str) {
     return str.replace(/[&<>'"]/g, function(match) {
       return {
@@ -375,9 +374,15 @@
     btnSkipPrev.textContent = `-${SKIP_STEP}`;
     btnSkipNext.textContent = `+${SKIP_STEP}`;
     
-    const lastFile = localStorage.getItem(LAST_FILE_KEY);
-    if (lastFile) {
-      currentFileName = lastFile;
+    // ★ v14.7の魔法：タブごとの専用記憶（Tab Memory）を確認！
+    let tabFile = sessionStorage.getItem('fc_tab_file');
+    let lastFile = localStorage.getItem(LAST_FILE_KEY);
+    
+    // タブ記憶があればそれを、無ければ最後に開いたファイルを採用
+    let fileToLoad = tabFile ? tabFile : lastFile;
+    
+    if (fileToLoad) {
+      currentFileName = fileToLoad;
       const loaded = loadProgress(currentFileName, null);
       if (!loaded) {
          currentFileName = ""; 
@@ -437,6 +442,8 @@
     try {
       localStorage.setItem(STORAGE_PREFIX + currentFileName, JSON.stringify(data));
       localStorage.setItem(LAST_FILE_KEY, currentFileName);
+      // ★ タブごとにファイルを紐付けて記憶
+      sessionStorage.setItem('fc_tab_file', currentFileName);
     } catch(e) {}
   }
 
@@ -520,8 +527,9 @@
     if(!currentFileName) return;
     if(!confirm(`現在開いている「${currentFileName}」の進捗データ（覚えた記録、★など）を全て削除して初期化しますか？`)) return;
     
-    if (isAutoPlaying) toggleAutoPlay();
+    if (isAutoPlaying) toggleAutoPlay(); 
     localStorage.removeItem(STORAGE_PREFIX + currentFileName);
+    sessionStorage.removeItem('fc_tab_file'); // ★ 初期化時はタブの記憶も消す
     starredIds.clear();
     chkStarOnly.checked = false;
     fullReset(); 
@@ -637,7 +645,7 @@
       btnAutoPlay.style.color = '#94a3b8';
       btnAutoPlay.style.borderColor = '#475569';
       clearTimeout(autoPlayTimer);
-      render(false); // ★停止した瞬間に全表示に戻す
+      render(false); 
     }
   }
 
@@ -748,19 +756,15 @@
     const card = currentSession[currentIndex];
     const textToShow = isFront ? card.front : card.back;
     
-    // ★ 魔改造：オートプレイ中の文字ピックアップ処理
     let rawText = textToShow.replace(/\\n/g, '\n');
-    let speakText = rawText; // 音声読み上げ用
-    let htmlContent = escapeHTML(rawText).replace(/\n/g, '<br>'); // 画面表示用
+    let speakText = rawText; 
+    let htmlContent = escapeHTML(rawText).replace(/\n/g, '<br>'); 
 
     if (isAutoPlaying) {
-      // 改行で分割して、空行を除外
       const parts = rawText.split('\n').filter(p => p.trim() !== "");
       if (parts.length > 1) {
-        // ランダムに1つ選ぶ
         const randomIndex = Math.floor(Math.random() * parts.length);
         speakText = parts[randomIndex];
-        // 表示用のHTMLを組み立てる（選ばれた文字 ＋ 小さく他◯件）
         htmlContent = escapeHTML(speakText) + `<br><br><span style="font-size: 16px; color: #94a3b8; font-weight: normal;">（他${parts.length - 1}件）</span>`;
       }
     }
@@ -786,9 +790,9 @@
 
     if (playAudio) {
       if (isFront && chkSpeakFront.checked) {
-        speakEnglish(speakText); // 選ばれた1つだけを読む
+        speakEnglish(speakText); 
       } else if (!isFront && chkSpeakBack.checked) {
-        speakEnglish(speakText); // 選ばれた1つだけを読む
+        speakEnglish(speakText); 
       }
     }
 
