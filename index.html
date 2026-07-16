@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Simple Flashcards v14.10 (Ultimate Clear)</title>
+<title>Simple Flashcards v14.11 (Data Compression)</title>
 <style>
   :root {
     --bg: #0f172a;
@@ -347,7 +347,6 @@
   const btnNext = document.getElementById('btnNext');
   const btnKnown = document.getElementById('btnKnown');
 
-  // 起動時の大掃除
   function cleanupOldVersions() {
     const keysToDelete = [];
     for (let i = 0; i < localStorage.length; i++) {
@@ -436,12 +435,14 @@
     window.speechSynthesis.speak(utterance);
   }
 
+  // ★ セーブデータの超圧縮処理
   function saveToStorage() {
     if (!currentFileName) return;
     const data = {
-      rawDeck: rawDeck,
-      activeDeck: activeDeck,
-      currentSession: currentSession,
+      rawDeck: rawDeck, // ベースの辞書だけは保持
+      // activeDeckとcurrentSessionは「IDの配列」だけを保存して大幅軽量化！
+      activeDeckIds: activeDeck.map(c => c.id),
+      currentSessionIds: currentSession.map(c => c.id),
       savedIndex: currentIndex,
       starredIds: Array.from(starredIds), 
       optShuffle: chkShuffle.checked,
@@ -454,11 +455,11 @@
       localStorage.setItem(LAST_FILE_KEY, currentFileName);
       sessionStorage.setItem('fc_tab_file', currentFileName);
     } catch(e) {
-      // ★ エラーメッセージを親切に変更
-      alert("⚠️ ブラウザの保存容量がいっぱいです！\n\n【解決方法】\n画面の「初期化」ボタンを押し、\n2番目の質問（他ファイルのデータを一掃しますか？）で「OK」を選んで空き容量を確保してください。");
+      alert("⚠️ ブラウザの保存容量がいっぱいです！\n\n【解決方法】\n画面の「初期化」ボタンを押し、\n2番目の質問で「OK」を選んで空き容量を確保してください。");
     }
   }
 
+  // ★ ロード時の復元処理（旧バージョンからの引き継ぎもサポート）
   function loadProgress(fileName, newlyParsedDeck) {
     try {
       const json = localStorage.getItem(STORAGE_PREFIX + fileName);
@@ -472,9 +473,13 @@
       
       if (data.starredIds) starredIds = new Set(data.starredIds);
 
+      // 旧バージョンからのマイグレーション用
+      let loadedActiveIds = data.activeDeckIds || (data.activeDeck ? data.activeDeck.map(c=>c.id) : null);
+      let loadedSessionIds = data.currentSessionIds || (data.currentSession ? data.currentSession.map(c=>c.id) : null);
+
       if (newlyParsedDeck && data.rawDeck) {
          if (isDeckChanged(data.rawDeck, newlyParsedDeck)) {
-             const activeIds = new Set((data.activeDeck || []).map(c => c.id));
+             const activeIds = new Set(loadedActiveIds || []);
              const learnedIds = new Set();
              data.rawDeck.forEach(c => {
                  if (!activeIds.has(c.id)) learnedIds.add(c.id);
@@ -483,11 +488,8 @@
              rawDeck = newlyParsedDeck;
              activeDeck = newlyParsedDeck.filter(c => !learnedIds.has(c.id));
 
-             if (data.currentSession && data.currentSession.length > 0) {
-                 currentSession = data.currentSession.map(oldCard => {
-                     const updatedCard = newlyParsedDeck.find(c => c.id === oldCard.id);
-                     return updatedCard ? updatedCard : oldCard;
-                 });
+             if (loadedSessionIds && loadedSessionIds.length > 0) {
+                 currentSession = loadedSessionIds.map(id => newlyParsedDeck.find(c => c.id === id)).filter(Boolean);
              } else {
                  currentSession = [];
              }
@@ -508,13 +510,18 @@
 
       if (data.rawDeck && data.rawDeck.length > 0) {
         rawDeck = data.rawDeck;
-        activeDeck = data.activeDeck || [...rawDeck];
         
-        if (data.currentSession && data.currentSession.length > 0) {
-          currentSession = data.currentSession;
+        if (loadedActiveIds) {
+            activeDeck = loadedActiveIds.map(id => rawDeck.find(c=>c.id === id)).filter(Boolean);
         } else {
-          startRound(); 
-          return true;  
+            activeDeck = [...rawDeck];
+        }
+
+        if (loadedSessionIds && loadedSessionIds.length > 0) {
+            currentSession = loadedSessionIds.map(id => rawDeck.find(c=>c.id === id)).filter(Boolean);
+        } else {
+            startRound(); 
+            return true;  
         }
 
         if (typeof data.savedIndex === 'number' && data.savedIndex < currentSession.length) {
@@ -531,18 +538,14 @@
     return false;
   }
 
-  // ★ ここが今回の一番の肝（全消去オプション）
   function clearData() {
     if(!currentFileName) return;
     
-    // 1回目の確認（現在のファイルをリセットするか）
     if(!confirm(`現在開いている「${currentFileName}」の進捗データ（覚えた記録、★など）を削除して最初からやり直しますか？`)) return;
     
     if (isAutoPlaying) toggleAutoPlay(); 
 
-    // 2回目の確認（過去の別ファイルのデータも消すか）
     if(confirm("【容量エラーが出ている方へ】\n裏側に「過去に読み込んだ別のファイル」のデータが溜まっていると容量エラーになります。\n\n過去の別のファイルのデータもすべて一掃して、空き容量を最大限に確保しますか？\n（※「OK」を強くおすすめします）")) {
-      // fc_ から始まる全データを一掃
       const keysToDelete = [];
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
@@ -553,7 +556,6 @@
       keysToDelete.forEach(k => localStorage.removeItem(k));
       alert("✅ 過去のデータを一掃し、保存容量を完全に確保しました！");
     } else {
-      // 現在のファイルだけ消す
       localStorage.removeItem(STORAGE_PREFIX + currentFileName);
     }
 
