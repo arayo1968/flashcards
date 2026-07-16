@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Simple Flashcards v14.9 (Storage Optimizer)</title>
+<title>Simple Flashcards v14.10 (Ultimate Clear)</title>
 <style>
   :root {
     --bg: #0f172a;
@@ -305,8 +305,8 @@
   // ★ カスタマイズ設定
   // ==========================================
   const SKIP_STEP = 10; 
-  const AUTO_SEC_FRONT = 1.5; // 表面を表示する秒数
-  const AUTO_SEC_BACK = 1;  // 裏面を表示する秒数
+  const AUTO_SEC_FRONT = 1.5; 
+  const AUTO_SEC_BACK = 1;  
   // ==========================================
 
   const STORAGE_PREFIX = 'fc_deck_v14_'; 
@@ -347,7 +347,7 @@
   const btnNext = document.getElementById('btnNext');
   const btnKnown = document.getElementById('btnKnown');
 
-  // ★ 追加：過去のバージョンのゴミデータを削除して容量を空ける関数
+  // 起動時の大掃除
   function cleanupOldVersions() {
     const keysToDelete = [];
     for (let i = 0; i < localStorage.length; i++) {
@@ -365,11 +365,7 @@
   function escapeHTML(str) {
     return str.replace(/[&<>'"]/g, function(match) {
       return {
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        "'": '&#39;',
-        '"': '&quot;'
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
       }[match];
     });
   }
@@ -386,7 +382,6 @@
   }
 
   window.addEventListener('DOMContentLoaded', () => {
-    // 起動時に大掃除を実行
     cleanupOldVersions();
 
     btnSkipPrev.textContent = `-${SKIP_STEP}`;
@@ -436,7 +431,6 @@
     window.speechSynthesis.cancel(); 
     const cleanText = text.replace(/\\n/g, ' ').replace(/\n/g, ' ');
     if (!cleanText.trim()) return;
-
     const utterance = new SpeechSynthesisUtterance(cleanText);
     utterance.lang = 'en-US'; 
     window.speechSynthesis.speak(utterance);
@@ -460,8 +454,8 @@
       localStorage.setItem(LAST_FILE_KEY, currentFileName);
       sessionStorage.setItem('fc_tab_file', currentFileName);
     } catch(e) {
-      // ★ 追加：容量オーバー時にユーザーへ警告を出す
-      alert("⚠️ ブラウザの保存容量がいっぱいです！\nこれ以上セーブできません。「初期化」ボタンで不要なファイルのデータを消去して空き容量を確保してください。");
+      // ★ エラーメッセージを親切に変更
+      alert("⚠️ ブラウザの保存容量がいっぱいです！\n\n【解決方法】\n画面の「初期化」ボタンを押し、\n2番目の質問（他ファイルのデータを一掃しますか？）で「OK」を選んで空き容量を確保してください。");
     }
   }
 
@@ -469,7 +463,6 @@
     try {
       const json = localStorage.getItem(STORAGE_PREFIX + fileName);
       if (!json) return false;
-
       const data = JSON.parse(json);
       
       if (data.optShuffle !== undefined) chkShuffle.checked = data.optShuffle;
@@ -481,7 +474,6 @@
 
       if (newlyParsedDeck && data.rawDeck) {
          if (isDeckChanged(data.rawDeck, newlyParsedDeck)) {
-             
              const activeIds = new Set((data.activeDeck || []).map(c => c.id));
              const learnedIds = new Set();
              data.rawDeck.forEach(c => {
@@ -506,7 +498,6 @@
              } else {
                  currentIndex = 0;
              }
-
              render(false);
              cardText.innerHTML = `<span class='info-msg'>テキストの変更を反映し、<br>進捗を引き継ぎました</span><br>▼ タップして再開`;
              isFront = true;
@@ -531,7 +522,6 @@
         } else {
           currentIndex = 0;
         }
-
         render(false); 
         cardText.innerHTML = `<span class='info-msg'>「${fileName}」の<br>進捗と順番を復元しました</span><br>▼ タップして再開`;
         isFront = true;
@@ -541,12 +531,32 @@
     return false;
   }
 
+  // ★ ここが今回の一番の肝（全消去オプション）
   function clearData() {
     if(!currentFileName) return;
-    if(!confirm(`現在開いている「${currentFileName}」の進捗データ（覚えた記録、★など）を全て削除して初期化しますか？\n※容量不足の解消にも効果的です。`)) return;
+    
+    // 1回目の確認（現在のファイルをリセットするか）
+    if(!confirm(`現在開いている「${currentFileName}」の進捗データ（覚えた記録、★など）を削除して最初からやり直しますか？`)) return;
     
     if (isAutoPlaying) toggleAutoPlay(); 
-    localStorage.removeItem(STORAGE_PREFIX + currentFileName);
+
+    // 2回目の確認（過去の別ファイルのデータも消すか）
+    if(confirm("【容量エラーが出ている方へ】\n裏側に「過去に読み込んだ別のファイル」のデータが溜まっていると容量エラーになります。\n\n過去の別のファイルのデータもすべて一掃して、空き容量を最大限に確保しますか？\n（※「OK」を強くおすすめします）")) {
+      // fc_ から始まる全データを一掃
+      const keysToDelete = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('fc_')) {
+          keysToDelete.push(key);
+        }
+      }
+      keysToDelete.forEach(k => localStorage.removeItem(k));
+      alert("✅ 過去のデータを一掃し、保存容量を完全に確保しました！");
+    } else {
+      // 現在のファイルだけ消す
+      localStorage.removeItem(STORAGE_PREFIX + currentFileName);
+    }
+
     sessionStorage.removeItem('fc_tab_file');
     starredIds.clear();
     chkStarOnly.checked = false;
