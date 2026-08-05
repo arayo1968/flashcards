@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Simple Flashcards v14.11 (Data Compression)</title>
+<title>Simple Flashcards v14.13 (Treadmill Audio Edition)</title>
 <style>
   :root {
     --bg: #0f172a;
@@ -37,7 +37,13 @@
   }
   
   header {
-    margin-bottom: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+    width: 100%;
+  }
+  .header-row {
     display: flex;
     flex-direction: row;
     gap: 8px;
@@ -75,6 +81,19 @@
     white-space: nowrap;
   }
   input[type="checkbox"] { transform: scale(1.1); margin: 0; }
+  
+  /* 秒数入力用フィールドのデザイン */
+  .num-input {
+    width: 44px;
+    background: #0f172a;
+    color: #fff;
+    border: 1px solid #475569;
+    border-radius: 4px;
+    text-align: center;
+    font-size: 13px;
+    padding: 2px 4px;
+  }
+  .num-input:focus { outline: none; border-color: var(--accent); }
 
   .btn-clear {
     background: #ef4444;
@@ -253,15 +272,32 @@
 
 <div class="container">
   <header>
-    <label class="btn-file">
-      📂 ファイル
-      <input type="file" id="fileInput">
-    </label>
-    <label class="chk-label"><input type="checkbox" id="chkShuffle"> 🔀</label>
-    <label class="chk-label"><input type="checkbox" id="chkSpeakFront"> 🔊表</label>
-    <label class="chk-label"><input type="checkbox" id="chkSpeakBack"> 🔊裏</label>
-    <label class="chk-label" style="border-color:var(--star);"><input type="checkbox" id="chkStarOnly"> ★のみ</label>
-    <button class="btn-file btn-clear" onclick="clearData()">初期化</button>
+    <!-- 行1: ファイル管理 -->
+    <div class="header-row">
+      <label class="btn-file">📂 ファイル <input type="file" id="fileInput"></label>
+      <button class="btn-file btn-clear" onclick="clearData()">初期化</button>
+    </div>
+    
+    <!-- 行2: 学習モード -->
+    <div class="header-row">
+      <label class="chk-label"><input type="checkbox" id="chkShuffle"> 🔀シャッフル</label>
+      <label class="chk-label"><input type="checkbox" id="chkSwap"> 🔄表裏入替</label>
+      <label class="chk-label" style="border-color:var(--star);"><input type="checkbox" id="chkStarOnly"> ★のみ</label>
+    </div>
+    
+    <!-- 行3: 音声と自動設定 -->
+    <div class="header-row">
+      <label class="chk-label">
+        <input type="checkbox" id="chkSpeakFront"> 🔊表 
+        <span style="color:#94a3b8; margin-left:4px;">待機</span>
+        <input type="number" id="numWaitFront" class="num-input" value="3.0" min="0" step="0.5" onclick="event.stopPropagation()">s
+      </label>
+      <label class="chk-label">
+        <input type="checkbox" id="chkSpeakBack"> 🔊裏 
+        <span style="color:#94a3b8; margin-left:4px;">待機</span>
+        <input type="number" id="numWaitBack" class="num-input" value="3.0" min="0" step="0.5" onclick="event.stopPropagation()">s
+      </label>
+    </div>
   </header>
 
   <div class="file-name-display" id="fileNameDisplay"></div>
@@ -305,10 +341,6 @@
   // ★ カスタマイズ設定
   // ==========================================
   const SKIP_STEP = 10; 
-  const AUTO_SEC_FRONT = 1.5; 
-  const AUTO_SEC_BACK = 1;  
-  // ==========================================
-
   const STORAGE_PREFIX = 'fc_deck_v14_'; 
   const LAST_FILE_KEY = 'fc_last_file_v14';
 
@@ -326,10 +358,15 @@
 
   const fileInput = document.getElementById('fileInput');
   const fileNameDisplay = document.getElementById('fileNameDisplay');
+  
+  // 各種設定用チェックボックス・インプット
   const chkShuffle = document.getElementById('chkShuffle');
+  const chkSwap = document.getElementById('chkSwap');
   const chkSpeakFront = document.getElementById('chkSpeakFront');
   const chkSpeakBack = document.getElementById('chkSpeakBack');
   const chkStarOnly = document.getElementById('chkStarOnly');
+  const numWaitFront = document.getElementById('numWaitFront');
+  const numWaitBack = document.getElementById('numWaitBack');
   
   const cardText = document.getElementById('cardText');
   const sideLabel = document.getElementById('sideLabel');
@@ -363,9 +400,7 @@
 
   function escapeHTML(str) {
     return str.replace(/[&<>'"]/g, function(match) {
-      return {
-        '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
-      }[match];
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[match];
     });
   }
 
@@ -382,28 +417,32 @@
 
   window.addEventListener('DOMContentLoaded', () => {
     cleanupOldVersions();
-
     btnSkipPrev.textContent = `-${SKIP_STEP}`;
     btnSkipNext.textContent = `+${SKIP_STEP}`;
     
     let tabFile = sessionStorage.getItem('fc_tab_file');
     let lastFile = localStorage.getItem(LAST_FILE_KEY);
-    
     let fileToLoad = tabFile ? tabFile : lastFile;
     
     if (fileToLoad) {
       currentFileName = fileToLoad;
       const loaded = loadProgress(currentFileName, null);
-      if (!loaded) {
-         currentFileName = ""; 
-      }
+      if (!loaded) currentFileName = ""; 
     }
     updateFileNameDisplay();
   });
 
+  // 設定変更時にすぐ保存・反映するイベントリスナー
   chkShuffle.addEventListener('change', saveToStorage);
   chkSpeakFront.addEventListener('change', saveToStorage);
   chkSpeakBack.addEventListener('change', saveToStorage);
+  numWaitFront.addEventListener('change', saveToStorage);
+  numWaitBack.addEventListener('change', saveToStorage);
+
+  chkSwap.addEventListener('change', () => {
+    saveToStorage();
+    if(rawDeck.length > 0) render(false); // 入替時は音声を即座に出さず表示のみ更新
+  });
 
   chkStarOnly.addEventListener('change', () => {
     saveToStorage();
@@ -412,6 +451,9 @@
 
   document.addEventListener('keydown', (e) => {
     if (rawDeck.length === 0) return;
+    // インプット要素（秒数入力）フォーカス時はキーボード操作を無効化
+    if (document.activeElement === numWaitFront || document.activeElement === numWaitBack) return;
+
     if (e.code === 'Space' || e.code === 'Enter' || e.code === 'ArrowRight') {
       e.preventDefault(); stepNext(null, true);
     } else if (e.code === 'ArrowLeft') {
@@ -425,30 +467,32 @@
     }
   });
 
-  function speakEnglish(text) {
+  // ★ 2言語対応の音声読み上げ関数
+  function speakText(text, langCode) {
     if (!('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel(); 
     const cleanText = text.replace(/\\n/g, ' ').replace(/\n/g, ' ');
     if (!cleanText.trim()) return;
     const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.lang = 'en-US'; 
+    utterance.lang = langCode; // 'ja-JP' または 'en-US' を指定
     window.speechSynthesis.speak(utterance);
   }
 
-  // ★ セーブデータの超圧縮処理
   function saveToStorage() {
     if (!currentFileName) return;
     const data = {
-      rawDeck: rawDeck, // ベースの辞書だけは保持
-      // activeDeckとcurrentSessionは「IDの配列」だけを保存して大幅軽量化！
+      rawDeck: rawDeck, 
       activeDeckIds: activeDeck.map(c => c.id),
       currentSessionIds: currentSession.map(c => c.id),
       savedIndex: currentIndex,
       starredIds: Array.from(starredIds), 
       optShuffle: chkShuffle.checked,
+      optSwap: chkSwap.checked,
       optSpeakFront: chkSpeakFront.checked,
       optSpeakBack: chkSpeakBack.checked,
-      optStarOnly: chkStarOnly.checked
+      optStarOnly: chkStarOnly.checked,
+      waitFront: numWaitFront.value,
+      waitBack: numWaitBack.value
     };
     try {
       localStorage.setItem(STORAGE_PREFIX + currentFileName, JSON.stringify(data));
@@ -459,7 +503,6 @@
     }
   }
 
-  // ★ ロード時の復元処理（旧バージョンからの引き継ぎもサポート）
   function loadProgress(fileName, newlyParsedDeck) {
     try {
       const json = localStorage.getItem(STORAGE_PREFIX + fileName);
@@ -467,13 +510,15 @@
       const data = JSON.parse(json);
       
       if (data.optShuffle !== undefined) chkShuffle.checked = data.optShuffle;
+      if (data.optSwap !== undefined) chkSwap.checked = data.optSwap;
       if (data.optSpeakFront !== undefined) chkSpeakFront.checked = data.optSpeakFront;
       if (data.optSpeakBack !== undefined) chkSpeakBack.checked = data.optSpeakBack;
       if (data.optStarOnly !== undefined) chkStarOnly.checked = data.optStarOnly;
+      if (data.waitFront !== undefined) numWaitFront.value = data.waitFront;
+      if (data.waitBack !== undefined) numWaitBack.value = data.waitBack;
       
       if (data.starredIds) starredIds = new Set(data.starredIds);
 
-      // 旧バージョンからのマイグレーション用
       let loadedActiveIds = data.activeDeckIds || (data.activeDeck ? data.activeDeck.map(c=>c.id) : null);
       let loadedSessionIds = data.currentSessionIds || (data.currentSession ? data.currentSession.map(c=>c.id) : null);
 
@@ -510,7 +555,6 @@
 
       if (data.rawDeck && data.rawDeck.length > 0) {
         rawDeck = data.rawDeck;
-        
         if (loadedActiveIds) {
             activeDeck = loadedActiveIds.map(id => rawDeck.find(c=>c.id === id)).filter(Boolean);
         } else {
@@ -540,7 +584,6 @@
 
   function clearData() {
     if(!currentFileName) return;
-    
     if(!confirm(`現在開いている「${currentFileName}」の進捗データ（覚えた記録、★など）を削除して最初からやり直しますか？`)) return;
     
     if (isAutoPlaying) toggleAutoPlay(); 
@@ -562,6 +605,7 @@
     sessionStorage.removeItem('fc_tab_file');
     starredIds.clear();
     chkStarOnly.checked = false;
+    chkSwap.checked = false;
     fullReset(); 
   }
 
@@ -603,12 +647,31 @@
 
     let tempDeck = [];
     lines.forEach((line, idx) => {
-      const parts = line.split(separator);
+      let parts = [];
+      if (separator === '\t') {
+        parts = line.split('\t');
+      } else {
+        let currentString = '';
+        let insideQuotes = false;
+        for (let i = 0; i < line.length; i++) {
+          const char = line[i];
+          if (char === '"') {
+            insideQuotes = !insideQuotes;
+          } else if (char === ',' && !insideQuotes) {
+            parts.push(currentString);
+            currentString = '';
+          } else {
+            currentString += char;
+          }
+        }
+        parts.push(currentString);
+      }
+
       if (parts.length >= 2) {
         tempDeck.push({ 
           id: idx,
-          front: parts[0].trim(), 
-          back: (parts[1] ? parts[1].trim() : "") 
+          front: parts[0].trim(), // 列1（日本語想定）
+          back: (parts[1] ? parts[1].trim() : "") // 列2（英語想定）
         });
       }
     });
@@ -623,6 +686,7 @@
       rawDeck = tempDeck;
       starredIds.clear();
       chkStarOnly.checked = false;
+      chkSwap.checked = false;
       fullReset(); 
     }
   }
@@ -684,11 +748,8 @@
     if (currentSession.length === 0 || currentIndex >= currentSession.length) return;
     
     const currentCard = currentSession[currentIndex];
-    if (starredIds.has(currentCard.id)) {
-      starredIds.delete(currentCard.id);
-    } else {
-      starredIds.add(currentCard.id);
-    }
+    if (starredIds.has(currentCard.id)) starredIds.delete(currentCard.id);
+    else starredIds.add(currentCard.id);
     
     saveToStorage();
     render(false); 
@@ -784,18 +845,33 @@
     btnSkipNext.disabled = false;
 
     const card = currentSession[currentIndex];
-    const textToShow = isFront ? card.front : card.back;
+    
+    // ★ 表裏入れ替え（Swap）と 言語の振り分けロジック
+    // データ元の列1(front)を日本語(ja-JP)、列2(back)を英語(en-US)と想定。
+    const isSwapped = chkSwap.checked;
+    let textToShow, langCode;
+    
+    if (!isSwapped) {
+      // 通常: 表が列1(JP)、裏が列2(EN)
+      textToShow = isFront ? card.front : card.back;
+      langCode = isFront ? 'ja-JP' : 'en-US';
+    } else {
+      // 入れ替え: 表が列2(EN)、裏が列1(JP)
+      textToShow = isFront ? card.back : card.front;
+      langCode = isFront ? 'en-US' : 'ja-JP';
+    }
     
     let rawText = textToShow.replace(/\\n/g, '\n');
-    let speakText = rawText; 
+    let speakTextStr = rawText; 
     let htmlContent = escapeHTML(rawText).replace(/\n/g, '<br>'); 
 
+    // ランダム読み上げ（複数行ある場合、1行だけ読む）
     if (isAutoPlaying) {
       const parts = rawText.split('\n').filter(p => p.trim() !== "");
       if (parts.length > 1) {
         const randomIndex = Math.floor(Math.random() * parts.length);
-        speakText = parts[randomIndex];
-        htmlContent = escapeHTML(speakText) + `<br><br><span style="font-size: 16px; color: #94a3b8; font-weight: normal;">（他${parts.length - 1}件）</span>`;
+        speakTextStr = parts[randomIndex];
+        htmlContent = escapeHTML(speakTextStr) + `<br><br><span style="font-size: 16px; color: #94a3b8; font-weight: normal;">（他${parts.length - 1}件）</span>`;
       }
     }
 
@@ -818,20 +894,25 @@
 
     cardScrollArea.scrollTop = 0;
 
+    // 音声読み上げ
     if (playAudio) {
       if (isFront && chkSpeakFront.checked) {
-        speakEnglish(speakText); 
+        speakText(speakTextStr, langCode); 
       } else if (!isFront && chkSpeakBack.checked) {
-        speakEnglish(speakText); 
+        speakText(speakTextStr, langCode); 
       }
     }
 
+    // 自動送りのタイマー処理（ユーザーが指定した待機秒数を使用）
     if (isAutoPlaying) {
       clearTimeout(autoPlayTimer);
-      const waitSeconds = isFront ? AUTO_SEC_FRONT : AUTO_SEC_BACK;
+      const waitSeconds = isFront ? parseFloat(numWaitFront.value) : parseFloat(numWaitBack.value);
+      // 万が一不正な値が入った場合は3秒をデフォルトにする
+      const safeSeconds = isNaN(waitSeconds) || waitSeconds < 0 ? 3 : waitSeconds;
+      
       autoPlayTimer = setTimeout(() => {
         stepNext(null, true); 
-      }, waitSeconds * 1000);
+      }, safeSeconds * 1000);
     }
   }
 
@@ -874,9 +955,8 @@
   function stepNext(e, isBtnClick = false) {
     if(e) {
       e.stopPropagation();
-      if (!isBtnClick && window.getSelection().toString().length > 0) {
-        return;
-      }
+      // テキスト選択中の誤クリック防止
+      if (!isBtnClick && window.getSelection().toString().length > 0) return;
     }
 
     if (rawDeck.length === 0) return;
